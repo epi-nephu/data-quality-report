@@ -19,6 +19,7 @@ knit: (function(input, ...) {
 and therefore will just be a futile check.  Can only apply if done an interview with case since PHO will ask this question, but there is no variable that indicates if case has such interview to filter on check.
 - qualified further the check on indigenous status: indigenous status marked as Missing/Not Stated & Collection attempted is missing
 - incorporated check criteria comments from Janet Strachan
+- updated Shigella DQ check using criteria from DH DQ dashboard (treatment antibiotics check)
 - updated AMR DQ check using criteria from DH DQ Dashboard
 
 -->

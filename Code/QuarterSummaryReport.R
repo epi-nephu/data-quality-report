@@ -9,6 +9,17 @@
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+
+
+# Version Control Notes
+# **************************
+# - Modified aggregate summary function to include filtering and removal of duplicate cases
+# - Included Version Control Notes section
+
+# &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+
+
 # load libraries
 library(here)
 library(readxl)
@@ -39,6 +50,12 @@ agg_outbreak_base_table <- readxl::read_xlsx(here("Output", "Aggregate Table",
 # Summary tables ----
 aggregate_summary <- function(df) {
   table = df %>% 
+    # remove duplicate cases
+    arrange(phess_id, data_check_date) %>% 
+    group_by(phess_id) %>% 
+    summarise(condition=first(condition), event_date=first(event_date), data_check_date=first(data_check_date), quarter=first(quarter)) %>% 
+    ungroup() %>% 
+    # count cases by condition and quarter
     group_by(condition, quarter) %>% 
     summarise(count=n()) %>% 
     right_join(., condition_base_table, by=c("condition" = "CONDITION")) %>% 

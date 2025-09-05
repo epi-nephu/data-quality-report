@@ -1,6 +1,6 @@
 ---
 title: "NEPHU - Data quality check report (V3)"
-author: "Des Gul"
+author: "EPI-NEPHU"
 date: "Report date: `r format(Sys.Date(), '%d %b %Y')`"
 output: html_document
 knit: (function(input, ...) {
@@ -21,10 +21,9 @@ and therefore will just be a futile check.  Can only apply if done an interview 
 - incorporated check criteria comments from Janet Strachan
 - updated Shigella DQ check using criteria from DH DQ dashboard (treatment antibiotics check)
 - updated AMR DQ check using criteria from DH DQ Dashboard
+- removed condition=influenza for RSV outbreaks
 
 -->
-
-This is a marked change - 
 
 
 ```{r setup, include=FALSE}
@@ -1388,7 +1387,7 @@ resp_ob_data_rmk <- resp_ob_data1mth %>%
          rmk_vacc_rsv = if_else((is.na(number_residents_vaccinated_rsv)) & organism=="Respiratory Syncytial virus", 
                                   "Data on vaccination % for residents missing", NA_character_), 
          rmk_status = if_else(is.na(runsumlast_status_date), "Date of last status update missing", NA_character_), 
-         rmk_rsv = if_else(condition!="Influenza" & organism=="Respiratory Syncytial virus", "Outbreaks caused by RSV should be marked condition = Influenza", NA_character_), 
+         # rmk_rsv = if_else(condition!="Influenza" & organism=="Respiratory Syncytial virus", "Outbreaks caused by RSV should be marked condition = Influenza", NA_character_), 
          rmk_final = if_else(runsumlast_status_type!="Final update" & investigation_status=="Completed", "Completed investigation should be marked Status update = Final update", NA_character_))
 
 

@@ -22,6 +22,8 @@ and therefore will just be a futile check.  Can only apply if done an interview 
 - updated Shigella DQ check using criteria from DH DQ dashboard (treatment antibiotics check)
 - updated AMR DQ check using criteria from DH DQ Dashboard
 - removed condition=influenza for RSV outbreaks
+- separate case linelist into MU and Others
+- remove TRA outbreaks from DQ check since this is DH responsibility
 
 -->
 
@@ -40,7 +42,9 @@ library(knitr)
 ```
 
 ```{r define files}
-condition_file <- "NEPHUCaseLinelistDQReport.xlsx"
+condition_mu_file <- "NEPHUCaseLinelistDQReport_MU.xlsx"
+
+condition_others_file <- "NEPHUCaseLinelistDQReport_Others.xlsx"
 
 outbreak_file <- "NEPHUOutbreakLinelistDQReport.xlsx"
 
@@ -78,11 +82,14 @@ writexl::write_xlsx(list(Completed = pullin_aggregate_completed_table,
 ```
 
 ```{r load data}
-condition.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+mu.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_mu_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
-# condition.raw <- readxl::read_xlsx(here::here("Data", "NEPHUCaseLinelistDQReportVarName_20250818.xlsx")) %>% janitor::clean_names()
+others.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_others_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+
+condition.raw <- bind_rows(others.raw, mu.raw)
 
 outbreak.raw <- readxl::read_xlsx(file.path(phess_data_dir, outbreak_file), guess_max=10000) %>% janitor::clean_names()
+
 ```
 
 ``` {r set dates}
@@ -267,6 +274,7 @@ outbreak.clean <- outbreak.raw %>%
          ) %>% 
   mutate(event_date = ymd(event_date)) %>% 
   filter(condition!="Tuberculosis") %>% 
+  filter(! str_detect(event_name, "^[:digit:]{6}\\sTRA\\s")) %>% 
   filter(lphu=="North Eastern") 
 
 cond_data1mth <- filter(condition.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) 
@@ -1284,7 +1292,6 @@ set_inprogress_table("Other Conditions", 4)
 
 ``` {r nephu outbreaks}
 outbreak_nephu <- outbreak.raw %>% 
-  filter(disease!="Tuberculosis") %>% 
   filter(between(event_date, as.Date(most_recent_date - days(7)), as.Date(most_recent_date))) %>% 
   filter(is.na(assigned_lphu)) %>% 
   mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
@@ -1309,7 +1316,6 @@ if(nrow(outbreak_nephu)==0) {
 
 ``` {r outbreaks new}
 outbreak_new <- ob_data1mth %>% 
-  filter(condition!="Tuberculosis") %>% 
   filter(investigation_status=="New") %>%
   mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>%
   select(phess_id, url, event_date, event_name, condition, investigation_status)
@@ -1558,5 +1564,4 @@ writexl::write_xlsx(list(Completed = full_aggregate_completed_table,
 
 
 ```
-
 

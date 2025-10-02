@@ -6,7 +6,7 @@
 # Define parameters:
 # Select month by entering the first 3 letters of the month in small letters within quotation marks. Eg: "mar", "sep", "dec", etc.
 # if you require all months, then enter "all"
-select_mth <- "may"
+select_qtr <- "Q3-2025"
 
 # select the max number of cases you want to randomly select.
 max_cases <- 5
@@ -29,10 +29,21 @@ con <- DBI::dbConnect(odbc::odbc(), "PHAR")
 
 
 # extract data from PHAR
-select_raw <- DBI::dbGetQuery(con, 
+case_raw <- DBI::dbGetQuery(con, 
                            "
                            SELECT * 
-                           FROM dh_public_health.phess_release.caseevents ce 
+                           FROM dh_public_health.phess_release.caseevents 
+                           WHERE ASSIGNED_LPHU = 'North Eastern' 
+                           AND EVENT_DATE BETWEEN '2025-07-01' AND '2025-09-30' 
+                           ORDER BY EVENT_DATE DESC; 
+                           "
+) %>% 
+  clean_names()
+
+ob_raw <- DBI::dbGetQuery(con, 
+                          "
+                           SELECT * 
+                           FROM dh_public_health.phess_release.outbreakevents
                            WHERE ASSIGNED_LPHU = 'North Eastern' 
                            AND EVENT_DATE BETWEEN '2025-07-01' AND '2025-09-30' 
                            ORDER BY EVENT_DATE DESC; 
@@ -43,13 +54,6 @@ select_raw <- DBI::dbGetQuery(con,
 
 # Load base table
 base_table <- readxl::read_xlsx(here("Data", "Monthly Review Base Table.xlsx"))
-
-
-# Set date limits
-most_recent_date <- max(select_raw$event_date)
-start_date1mth <- most_recent_date - days(30)
-start_date2mth <- most_recent_date - days(60)
-start_date3mth <- most_recent_date - days(90)
 
 
 # Define configurations
@@ -75,6 +79,8 @@ rare_urgents <- c("Middle East Respiratory Syndrome (MERS)", "Zika virus", "Barm
 other_rare_urgents <- c("Botulism", "Cholera", "Haemolytic Uraemic Syndrome", "Leprosy", 
                         "Severe Acute Respiratory Syndrome (SARS)", "Smallpox")
 inclu_defn <- c("Confirmed", "Probable", "At risk")
+resp_ob <- c("Influenza", "Influenza A", "Influenza B", "Respiratory Syncytial virus", "Coronavirus")
+
 
 
 # Disease selection for each month
@@ -128,19 +134,23 @@ dec <- c("Shigellosis", "Rotavirus infection", "Campylobacter infection", "FBWB"
 
 
 
-# configure data to filter only for completed cases and rename for Diseases
-condition.subset <- select_raw %>% 
+# configure data to filter only for completed cases and outbreaks and rename for Diseases
+condition.subset <- case_raw %>% 
   rename(defn = event_classification, 
          phess_id = event_id) %>% 
   distinct(phess_id, .keep_all=TRUE) %>% 
   #filter(between(date_completed, as.Date(start_date3mth), as.Date(start_date2mth))) %>% 
-  filter(investigation_status=="Completed") %>% 
+  #filter(investigation_status=="Completed") %>% 
   filter(event_type=="Case") %>% 
   filter(defn %in% inclu_defn) %>% 
   #filter(lga %in% nephu_lgas) %>% 
   #filter(lphu=="North Eastern") %>% 
   #filter(follow_up_required_by_last_iteration=="Local Public Health Unit") %>% 
   #filter(!is.na(acknowledged_by)) %>% 
+  # adjust for MU since has long follow-up time (>6mths)
+  mutate(investigation_outcome = if_else(condition=="Mycobacterium ulcerans" & investigation_status!="New", 
+                                         "Completed", investigation_status)) %>% 
+  filter(investigation_outcome == "Completed") %>% 
   mutate(Disease = case_when(condition %in% cpo ~ "CPOs", 
                              condition %in% hepb ~ "Hepatitis B", 
                              condition %in% hepc ~ "Hepatitis C", 
@@ -170,9 +180,31 @@ condition.subset <- select_raw %>%
   select(Disease, investigation_completed_date, condition, phess_id)
 
 
-tabyl(select_raw, event_type)
+ob.subset <- ob_raw %>% 
+  rename(defn = event_classification, 
+         phess_id = event_id) %>% 
+  distinct(phess_id, .keep_all=TRUE) %>% 
+  filter(investigation_status == "Completed") %>% 
+  filter(event_type == "Outbreak") %>% 
+  filter(defn == "Confirmed") %>% 
+  mutate(OB_type = case_when(organism_cause %in% resp_ob ~ "Res OB", 
+                             condition_type == "Enteric Diseases" ~ "Ent OB", 
+                             TRUE ~ "Missing")) %>% 
+  select(OB_type, create_date, organism_cause, phess_id)
+
+# combined condition and ob subsets
+combined <- condition.subset %>% 
+  select(-investigation_completed_date) %>% 
+  bind_rows(ob.subset %>% 
+              select(-create_date) %>% 
+              filter(OB_type %in% c("Res OB", "Ent OB")) %>% 
+              rename(Disease = OB_type, 
+                     condition = organism_cause)
+            )
+
+
 # Random select 5 cases on each disease
-random5 <- condition.subset %>% 
+random5 <- combined %>% 
   group_by(Disease) %>% 
   slice_sample(n=5)
 
@@ -188,14 +220,19 @@ random5_table <- left_join(base_table, random5, by="Disease") %>%
 # }
 
 request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD", "Measles", "Mpox", 
-                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans")
+                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Res OB", "Ent OB")
 
-reqest_df <- random5_table %>% 
+request_df <- random5_table %>% 
   filter(Disease %in% request_selection)
 
 
 # Export df to excel sheet
-output_file_name <- paste0("Monthly_review_cases_", select_mth, "_", format(Sys.Date(), '%d%m%Y'), ".xlsx")
-writexl::write_xlsx(monthly_extract, here("Output", output_file_name))
+output_file_name <- paste0("Quarterly_review_cases_", select_qtr, "_", format(Sys.Date(), '%d%m%Y'), ".xlsx")
+writexl::write_xlsx(request_df, here("Output", output_file_name))
 
+tabyl(case_raw, condition, investigation_status)
+typhoid <- case_raw %>% 
+  filter(condition=="Typhoid")
 
+mu <- case_raw %>% 
+  filter(condition=="Mycobacterium ulcerans")

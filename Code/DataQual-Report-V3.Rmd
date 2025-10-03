@@ -22,7 +22,7 @@ and therefore will just be a futile check.  Can only apply if done an interview 
 - updated Shigella DQ check using criteria from DH DQ dashboard (treatment antibiotics check)
 - updated AMR DQ check using criteria from DH DQ Dashboard
 - removed condition=influenza for RSV outbreaks
-- separate case linelist into MU and Others
+- import separate case linelist files into Exceptions and Others
 - remove TRA outbreaks from DQ check since this is DH responsibility
 
 -->
@@ -42,9 +42,13 @@ library(knitr)
 ```
 
 ```{r define files}
-condition_mu_file <- "NEPHUCaseLinelistDQReport_MU.xlsx"
+#condition_mu_file <- "NEPHUCaseLinelistDQReport_MU.xlsx"
 
 condition_others_file <- "NEPHUCaseLinelistDQReport_Others.xlsx"
+
+#condition_all_file <- "NEPHUCaseLinelistDQReport_All.xlsx"
+
+condition_exceptions_file <- "NEPHUCaseLinelistDQReport_Exceptions.xlsx"
 
 outbreak_file <- "NEPHUOutbreakLinelistDQReport.xlsx"
 
@@ -82,11 +86,15 @@ writexl::write_xlsx(list(Completed = pullin_aggregate_completed_table,
 ```
 
 ```{r load data}
-mu.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_mu_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+# mu.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_mu_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
 others.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_others_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
-condition.raw <- bind_rows(others.raw, mu.raw)
+exceptions.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_exceptions_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+
+# all.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_all_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+
+condition.raw <- bind_rows(others.raw, exceptions.raw)
 
 outbreak.raw <- readxl::read_xlsx(file.path(phess_data_dir, outbreak_file), guess_max=10000) %>% janitor::clean_names()
 

@@ -44,11 +44,11 @@ library(knitr)
 ```{r define files}
 #condition_mu_file <- "NEPHUCaseLinelistDQReport_MU.xlsx"
 
-condition_others_file <- "NEPHUCaseLinelistDQReport_Others.xlsx"
+condition_others_file <- "NEPHUCaseLinelistDQReportOthers.xlsx"
 
 #condition_all_file <- "NEPHUCaseLinelistDQReport_All.xlsx"
 
-condition_exceptions_file <- "NEPHUCaseLinelistDQReport_Exceptions.xlsx"
+condition_exceptions_file <- "NEPHUCaseLinelistDQReportExceptions.xlsx"
 
 outbreak_file <- "NEPHUOutbreakLinelistDQReport.xlsx"
 
@@ -86,8 +86,6 @@ writexl::write_xlsx(list(Completed = pullin_aggregate_completed_table,
 ```
 
 ```{r load data}
-# mu.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_mu_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
-
 others.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_others_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
 exceptions.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_exceptions_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
@@ -610,7 +608,7 @@ set_keymiss_table(bbv_key_missing_rmk)
 ```
 <br>
 
-**Cases still marked as in progress after 1 month**
+**Cases still marked as in progress after 3 months**
 
 ``` {r BBV inprogress table, ft.align="left"}
 set_inprogress_table("Blood Borne Viruses", 4)

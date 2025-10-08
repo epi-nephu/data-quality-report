@@ -1,0 +1,1373 @@
+---
+title: "NEPHU - Data quality check report (V2)"
+author: ""
+date: "Report date: `r format(Sys.Date(), '%d %b %Y')`"
+output: html_document
+knit: (function(input, ...) {
+  rmarkdown::render(input, output_file = paste0("DataQualChk", "-", format(Sys.Date(), "%d %b %Y")), output_dir = "../Output") })
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, ft.align="left", fig.width=9, fig.height=6)
+
+here::i_am("Code/Code Archive/DataQual-Report_V2.Rmd")
+
+library(tidyverse)
+library(lubridate)
+library(flextable)
+library(officer)
+library(knitr)
+```
+
+```{r define files}
+condition_file <- "NEPHUCaseLinelistDQReport.xlsx"
+
+outbreak_file <- "NEPHUOutbreakLinelistDQReport.xlsx"
+
+main_dir <- str_extract(getwd(), "^.+Epidemiology")
+phess_dir_component <- "/Epi reports/PHESS Reporting/PHESS Reports for Power BI"
+phess_data_dir <- paste0(main_dir, phess_dir_component)
+
+```
+
+```{r load data}
+condition.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
+#condition.raw <- readxl::read_xlsx(here::here("Data", "NEPHUCaseLinelistDQReport_20250404113557.xlsx"), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names()
+
+outbreak.raw <- readxl::read_xlsx(file.path(phess_data_dir, outbreak_file), guess_max=10000) %>% janitor::clean_names()
+```
+
+``` {r set dates}
+most_recent_date <- max(condition.raw$event_date)
+start_date1mth <- most_recent_date - days(30)
+start_date2mth <- most_recent_date - days(60)
+start_date4mth <- most_recent_date - days(120)
+start_date7mth <- most_recent_date - days(210)
+
+```
+
+``` {r cond list}
+# Conditions
+hepB_cond <- c("Hepatitis B - Unspecified", "Hepatitis B - Newly acquired")
+
+hepC_cond <- c("Hepatitis C - Unspecified", "Hepatitis C - Newly acquired", "Hepatitis C - <24months of age")
+
+hep_cond <- c(hepB_cond, hepC_cond)
+
+hiv_cond <- c("Human Immunodeficiency Virus Infection - Newly acquired", "Human Immunodeficiency Virus infection - Unspecified", "Human Immunodeficiency Virus Infection - Individual aged 18 months or older")
+
+syph_cond <- c("Syphilis - Congenital", "Syphilis - Infectious", "Syphilis - Late")
+
+amr_cond <- c("Candida auris", "Carbapenemase producing enterobacterales", "Carbapenemase producing pseudomonas", 
+              "Carbapenemase producing acinetobacter", "VanA Vancomycin resistant enterococcus", 
+              "Creutzfeldt-Jakob disease (CJD)")
+
+urgent_cond <- c("Anthrax", "Botulism", "Candida auris", "Cholera", "COVID-19", "Diphtheria", 
+                 "Food-borne or water-borne illness", "Haemolytic Uraemic Syndrome", "Haemophilus influenzae Type B (HiB)",                  "Hepatitis A", "Meningococcal infection", "Japanese encephalitis", "Legionellosis", "Listeriosis", 
+                 "Lyssavirus - Australian Bat Lyssavirus", "Measles", "Middle East Respiratory Syndrome (MERS)", "Mpox", 
+                 "Murray Valley Encephalitis Virus", "Paratyphoid", "Plague", "Poliomyelitis", "Rabies", 
+                 "Severe Acute Respiratory Syndrome (SARS)", "Smallpox", "Tularaemia", "Typhoid", 
+                 "Viral haemorrhagic fevers", "Yellow Fever")
+
+
+primary_risk_noncount <- c("Respiratory Syncytial virus", "Varicella zoster infection (Chickenpox)", 
+                           "Varicella zoster infection (Shingles)", 
+                           "Varicella zoster infection (Unspecified)", "Influenza", "Cryptosporidiosis", 
+                           "Pertussis")
+
+enteric_conditions <- c("Campylobacter infection", "Cryptosporidiosis", "Hepatitis A", "Hepatitis E", 
+                        "Listeriosis", "Typhoid", "Paratyphoid", "Salmonellosis", "Shigellosis", 
+                        "Shiga-toxin and Vero-toxin producing Escherichia coli", 
+                        "Haemolytic Uraemic Syndrome", "Vibrio parahaemolyticus infection")
+
+summary_risk_conditions <- c("Pneumococcal infection (IPD)", "Invasive Group A Streptococcus")
+
+risk_factor_excl <- c(summary_risk_conditions, amr_cond, hiv_cond, 
+                      syph_cond, "Gonococcal infection", "Chlamydia trachomatis infection")
+
+excluded_conditions <- c("Influenza", "Respiratory Syncytial virus", "Novel Coronavirus (2019-nCoV)", "Rotavirus infection", "Gonococcal infection", "Chlamydia trachomatis infection")
+
+# Outbreak
+resp_ob_conditions <- c("Influenza", "Novel Coronavirus (2019-nCoV)", "Respiratory Syncytial virus")
+
+gastro_ob_conditions <- c("Cryptosporidiosis", "Food-borne or water-borne illness", "Hepatitis A", "Campylobacter infection", "Salmonellosis")
+
+```
+
+``` {r data config}
+# configure data to last 4 weeks and filter only for cases to be followed-up (acknowledged) and rename variables
+condition.clean <- condition.raw %>% 
+  # rename variables
+  rename(defn = most_recent_event_classfication, 
+         organism = organism_cause, 
+         serogrp = sero_group_subtype, 
+         clin_pres = case_found_by, 
+         dob = birth_date, 
+         age = age_in_years_from_event_date, 
+         atsi = indigenous_status, 
+         suburb = suburb_town, 
+         postcode = postcode_20, 
+         lga = local_government_area, 
+         lphu = local_public_health_unit, 
+         cty_birth = country_of_birth, 
+         death_status = death_due_to_the_notifiable_condition_answer_disease, 
+         death_date = date_of_death_enter_edit_on_persons_tab, 
+         idty_gender = identified_gender, 
+         trans = transgender_gender_diverse, 
+         pri_lang = language_spoken_at_home, 
+         epi_class = epi_classification, 
+         sympt_onset = date_of_first_symptom_onset, 
+         dr_consent = this_doctor_has_provided_consent_to_contact_the_case_directly, 
+         cal_onset_date = calculated_onset_date, 
+         event_class = event_classification, 
+         prep_ever = has_the_person_ever_taken_pre_exposure_prophylaxis_pr_ep, 
+         live_hiv = is_the_case_a_person_living_with_hiv, 
+         hiv_diag_date = hiv_diagnosis_date, 
+         prev_hiv_diag = has_the_case_been_previously_diagnosed_with_hiv, 
+         prev_neg_hiv = does_the_case_have_a_previous_negative_or_indeterminate_hiv_test, 
+         prev_nonlab_hiv = has_the_person_had_a_previous_non_laboratory_hiv_test, 
+         cd4_count_done = was_a_cd4_count_requested_or_done_at_or_near_the_date_of_this_current_diagnosis_in_victoria, 
+         viral_load = was_a_viral_load_requested_or_done_at_or_near_the_date_of_this_current_diagnosis_in_victoria, 
+         clin_status_spec_col = what_was_the_patients_clinical_status_at_the_time_of_specimen_collection_for_this_hiv_diagnosis, 
+         seroconv_12m = does_the_patient_report_symptoms_consistent_with_hiv_seroconversion_illness_primary_hiv_infection_in_the_12_months_prior_to_specimen_collection_for_this_hiv_diagnosis, 
+         infect_acq = where_was_the_infection_probably_acquired, 
+         hiv_vic = counted_as_plhiv_in_victoria, 
+         hiv_class = hiv_disease_classification, 
+         hiv_first = when_was_the_patient_first_diagnosed_with_hiv_infection, 
+         hiv_first_place = specify_place_of_first_hiv_diagnosis, 
+         exp_code = exposure_code, 
+         mpox_contact_past21days = in_the_past_21_days_has_the_case_had_contact_with_a_confirmed_or_probable_case_of_mpox, 
+         mpox_suspcontact_past21days = in_the_past_21_days_has_the_case_had_contact_with_someone_with_a_similar_illness_or_suspected_case_of_mpox, 
+         return_overseas_contact_past21days = in_the_past_21_days_has_the_case_had_any_contact_with_a_person_recently_returned_from_overseas, 
+         multiple_sexual_partners_past21days = in_the_past_21_days_has_the_case_had_multiple_sexual_partners, 
+         msm_contact_past21days = in_the_past_21_days_has_the_case_had_male_to_male_sexual_contact,
+         sopv_past21days = in_the_past_21_days_has_the_case_attended_any_of_the_following,
+         mpox_endemic_cty = if_the_case_visited_a_mpox_endemic_country_did_the_case_have_any_contact_with_bush_meat_wild_animals_rodents_or_pets, 
+         travel_os_past21days = in_the_21_days_prior_to_illness_did_the_case_travel_overseas, 
+         travel_is_past21days = in_the_21_days_prior_to_illness_did_the_case_travel_interstate, 
+         risk_factor_contact_7daysprior = in_the_seven_days_prior_to_the_onset_of_symptoms_did_the_case_have_contact_with_any_of_the_following_risk_factors, 
+         illness_contact_7daysprior = did_the_case_have_contact_with_a_person_know_or_suspected_to_have_a_similar_illness_in_the_7_days_prior_to_symptom_onset, 
+         traveller_contact_7daysprior = did_the_case_have_contact_with_a_person_who_had_recently_travelled_in_the_7_days_prior_to_symptom_onset, 
+         sopv_7daysprior = in_the_7_days_prior_to_symptom_onset_did_the_case_attend_any_sex_on_premises_venues_or_engage_in_group_sex_activities, 
+         sexual_7daysprior = did_the_case_have_sexual_contact_with_anyone_in_the_7_days_prior_to_symptom_onset, 
+         food_drink_7daysprior = in_the_7_days_prior_to_symptom_onset_did_the_case_consume_food_or_drink_from_any_of_the_following, 
+         shig_sexual_contact = did_any_sexual_partner_report_any_symptoms_of_shigella, 
+         shig_travel_contact = did_the_traveller_report_any_symptoms_of_shigella, 
+         ds_contacts_ident = number_of_downstream_contacts_identified, 
+         ds_contacts_nocontact = number_of_downstream_contacts_unable_to_be_contacted, 
+         us_contacts_ident = number_of_acquisition_upstream_contacts_identified, 
+         us_contacts_nocontact = number_of_acquisition_upstream_contacts_unable_to_be_contacted, 
+         mpox_iso_clear = case_cleared_from_isolation, 
+         car_alert = does_this_organism_have_critical_antimicrobial_resistance_car_alert, 
+         infect_from = who_was_the_infection_likely_acquired_from, 
+         pregnant = was_the_case_pregnant_at_time_of_initial_notification, 
+         antenatal = at_what_stage_of_pregnancy_did_the_case_present_for_antenatal_care, 
+         symptoms = did_person_have_symptoms, 
+         sexual_exposure = sexual_exposure_206, 
+         recent_travel_aus = has_the_case_recently_travelled_in_australia, 
+         recent_travel_overseas = has_the_case_recently_travelled_overseas, 
+         endemic_area_past12mths = has_the_patient_lived_in_and_or_visited_any_known_endemic_areas_in_the_past_12_months, 
+         event_cause = has_the_patient_reported_any_event_s_they_thought_may_have_caused_the_infection, 
+         cty_travel = country_44, 
+         linked_case_cat = category, 
+         infect_where = where_was_the_infection_probably_acquired, 
+         infect_where_state = state, 
+         infect_where_cty = country_210, 
+         esf_received = enhanced_surveillance_data_collected, 
+         risk_inject_drug = does_the_patient_have_a_history_of_injecting_drug_use, 
+         neg_test_24m = has_the_case_had_a_negative_test_in_the_past_24_months, 
+         test_reason = reason_for_testing, 
+         icu = admitted_to_icu, 
+         pcr_diag_only = diagnosed_by_pcr_only, 
+         diag_dr_type = diagnosing_doctor_type, 
+         tmt_offer = has_the_case_been_offered_treatment_for_answer_description, 
+         eform = e_form_received, 
+         hepb_tested = does_the_case_have_a_current_hepatitis_b_pcr_dna_test, 
+         hepc_tested = does_the_case_have_a_current_hepatitis_c_pcr_rna_test, 
+         swim_watersp = in_the_12_days_prior_to_onset_of_illness_did_the_case_participate_in_swimming_or_water_sports, 
+         contact_person_12_25days = had_the_case_had_contact_with_a_laboratory_confirmed_case_or_a_person_with_a_similar_illness_in_the_12_25_days_prior_to_onset_of_illness
+         ) %>% 
+  mutate(event_date = ymd(event_date)) %>% 
+  mutate(sympt_onset = ymd(sympt_onset)) %>% 
+  # separate_rows(risk_factors, primary_exposure, sep=";") %>% 
+  #janitor::remove_empty(which="cols") %>% 
+  #filter(defn=="Confirmed" | defn=="Probable") %>% 
+  #filter(event_type=="Case") %>% 
+  #filter(lga %in% nephu_lgas) %>% 
+  filter(lphu=="North Eastern") %>% 
+  filter(follow_up_required_by_last_iteration=="Local Public Health Unit") %>% 
+  filter(!is.na(acknowledged_by))
+
+
+outbreak.clean <- outbreak.raw %>% 
+  rename(lphu = local_public_health_unit, 
+         racf_id = residential_aged_care_service_id_if_applicable, 
+         lga = local_government_area, 
+         defn = most_recent_case_classfication, 
+         organism = organism_cause, 
+         serogrp = sero_group_subtype, 
+         setting = setting_where_exposure_occurred_19, 
+         onset_date_first = date_of_onset_of_first_case, 
+         onset_date_last = date_of_onset_of_last_case, 
+         atrisk_clients_num = number_of_clients_residents_at_risk, 
+         atrisk_staff_num = number_of_staff_at_risk, 
+         client_cases_num = number_of_resident_cases, 
+         staff_cases_num = number_of_staff_cases, 
+         hospitalisations = number_of_hospitalisations, 
+         deaths = number_of_deaths, 
+         onset_earliest_case = date_of_onset_of_first_earliest_case, 
+         onset_most_recent_case = date_of_onset_of_most_recent_case, 
+         resident_cases_cum = total_number_of_resident_cases_cumulative_30, 
+         staff_cases_cum = total_number_of_staff_cases_cumulative_31, 
+         hospital_cum = number_of_hospitalisations_cumulative_32, 
+         deaths_cum = number_of_deaths_cumulative_39, 
+         epi_class = epi_classification, 
+         vaccinated_residents = percentage_of_residents_vaccinated, 
+         vaccinated_staff = percentage_of_staff_vaccinated, 
+         facility_class = facility_classification, 
+         txm_type = transmission_type_of_outbreak
+         ) %>% 
+  mutate(event_date = ymd(event_date)) %>% 
+  filter(lphu=="North Eastern") 
+
+cond_data1mth <- filter(condition.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) 
+
+cond_data_mth2 <- filter(condition.clean, between(event_date, as.Date(start_date2mth), as.Date(start_date1mth - 1))) %>% 
+  filter(event_type=="Case")
+
+cond_data_mth4 <- filter(condition.clean, event_date <= as.Date(start_date4mth)) %>% 
+  filter(event_type=="Case")
+
+cond_data_mth7 <- filter(condition.clean, event_date <= as.Date(start_date7mth)) %>% 
+  filter(event_type=="Case")
+
+# outbreak data cut
+ob_data1mth <- filter(outbreak.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
+  filter(condition %in% c(resp_ob_conditions, gastro_ob_conditions))
+
+resp_ob_data1mth <- filter(outbreak.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
+  filter(condition %in% resp_ob_conditions | organism=="Respiratory Syncytial virus")
+
+gastro_ob_data1mth <- filter(outbreak.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
+  filter(condition %in% gastro_ob_conditions)
+
+legion_ob <- filter(outbreak.clean, condition=="Legionellosis")
+
+```
+
+Data quality check is performed on data from `r start_date1mth` to `r most_recent_date`.
+<br>
+
+**Notes about specific remarks:**
+
+Please review country of birth data - Currently this data for the case is marked as "Unknown" or "Not Stated". Please review case notes to see if COB detail may have been provided and update the data field accordingly.  If no change, then ignore the remark.
+
+Please review Indigenous status - Currently this data for case is marked as "Missing/Not Stated". Please review case notes to see if more specific data may have been provided and update the data field accordingly.  If no change, then ignore the remark.
+
+<br><br>
+
+``` {r core data}
+# Check on core data fields
+
+key_missing_rmk <- cond_data1mth %>% 
+  filter(investigation_status=="Completed" ) %>% 
+  filter(!condition %in% excluded_conditions) %>% 
+  filter(death_status=="Alive") %>% 
+  filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  mutate(
+    # core data fields
+    rmk_suburb = if_else(is.na(suburb), "Suburb is missing", NA_character_), 
+    rmk_pc = if_else(is.na(postcode), "Postcode is missing", NA_character_), 
+    rmk_lga = if_else(is.na(lga), "LGA is missing", NA_character_), 
+    rmk_cob = if_else(is.na(cty_birth), "Country of birth is missing", NA_character_), 
+    rmk_cob_ns = if_else(cty_birth=="Not Stated", 
+                      "Please review country of birth data", NA_character_), 
+    rmk_atsi = if_else(atsi=="Missing/Not Stated", "Indigenous status marked Missing/Not Stated", NA_character_), 
+    rmk_sex = if_else(is.na(sex), "Sex is missing", NA_character_), 
+    rmk_dob = if_else(is.na(dob), "DOB is missing", NA_character_), 
+    rmk_death = if_else(is.na(death_status), "Death due to notifiable condition is missing", NA_character_), 
+    rmk_wsc = if_else(is.na(work_study_care_status), "Work/Study/Care status is missing", NA_character_), 
+    rmk_cond = if_else(is.na(condition), "Condition is missing", NA_character_), 
+    rmk_found = if_else(is.na(clin_pres), "Case found by is missing", NA_character_), 
+    rmk_epiclass = if_else(is.na(epi_class), "Epi classification is missing", NA_character_), 
+    rmk_organism = if_else(is.na(organism), "Organism/cause is missing", NA_character_), 
+    rmk_case = if_else(event_type=="Contact/exposed person", "Case is left as Contact/exposed person", NA_character_), 
+    rmk_eventdate = if_else(is.na(event_date), "Event date is missing", NA_character_), 
+    #rmk_gp = if_else(is.na(local_family_treating_doctor), "GP detail is missing", NA_character_), 
+    rmk_vac_source = if_else(vaccinated=="Yes" & is.na(source_of_information), 
+                             "Vaccine source of information missing", NA_character_), 
+    rmk_suspected = if_else(defn=="Suspected", "Case is still Suspected", NA_character_), 
+    rmk_travel_os_cty = if_else(recent_travel_overseas=="Yes" & is.na(cty_travel), 
+                            "Country field is blank for overseas travel recently", NA_character_), 
+    rmk_notifier = if_else(condition %in% urgent_cond & is.na(notifier), 
+                           "Notifier is missing", NA_character_), 
+    # rmk_eform = if_else(condition %in% urgent_cond & is.na(eform), "Eform received is missing", NA_character_), 
+    # risk factors
+    primary_exp_count = if_else(reporting_group != "Sexually Transmissible Infections" | 
+                                  !condition %in% primary_risk_noncount, 
+                                str_count(primary_exposure, "Primary"), NA_integer_), 
+    rmk_risk = case_when(!condition %in% risk_factor_excl & is.na(risk_factors) 
+                         ~ "Data on risk factors is missing", 
+                         !condition %in% risk_factor_excl & primary_exp_count>1 
+                         ~ "More than 1 primary risk factor provided", 
+                         primary_exp_count==0 & !condition %in% c(primary_risk_noncount, "Hepatitis D") 
+                         ~ "No primary risk factor provided"), 
+    rmk_cty_travel = if_else(risk_factors=="Travel overseas" & is.na(cty_travel), 
+                             "Country missing for Travel overseas risk", NA_character_), 
+    # hyperlink phess_id
+    url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) 
+
+
+# miss_rmk_vars <- names(key_missing_rmk)[str_detect(names(key_missing_rmk), "rmk_")] # to collect all the remark columns names
+# 
+# key_missing <- key_missing_rmk %>% 
+#   mutate(remarks = str_remove_all(do.call(paste, c(key_missing_rmk[miss_rmk_vars], sep=", ")), pattern="NA,\\s")) %>% 
+#   mutate(remarks = str_remove(remarks, pattern=",\\sNA")) %>% 
+#   filter(remarks!="NA") %>% 
+#   select(phess_id, url, reporting_group, condition, event_date, defn, event_type, investigation_status, remarks)
+
+```
+
+``` {r checking functions, eval=FALSE}
+# check if colname is in df
+if(any(grepl("previous_negative_hiv_test", colnames(condition.raw)))){
+   print("True")
+} else {print("False")}
+
+```
+
+``` {r progress check}
+# not running checks on new cases
+
+# progress_exclu_conditions <- c("Hepatitis B - Unspecified", "Hepatitis C - Unspecified")
+
+new_exclu_conditions <- c("Food-borne or water-borne illness", "Chlamydia trachomatis infection", "Gonococcal infection", 
+                          "Syphilis - Infectious", "Syphilis - Late", "Influenza", "Respiratory Syncytial virus")
+
+new <- condition.clean %>% 
+  filter(investigation_status=="New" | investigation_status=="At risk") %>% 
+  filter(! condition %in% new_exclu_conditions) %>% 
+  filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  filter(death_status=="Alive") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  select(phess_id, url, reporting_group, condition, event_date, defn, event_type, investigation_status) %>% 
+  arrange(reporting_group, condition) %>% 
+  filter(between(event_date, as.Date(most_recent_date - days(42)), as.Date(most_recent_date - days(29))))
+
+in_progress_mth2 <- cond_data_mth2 %>% 
+  filter(investigation_status == "In progress") %>% 
+  #filter(condition!="Mycobacterium ulcerans") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  select(phess_id, url, reporting_group, condition, event_date, defn, investigation_status, event_type) %>% 
+  arrange(reporting_group, condition) 
+
+in_progress_mth4 <- cond_data_mth4 %>% 
+  filter(investigation_status == "In progress") %>% 
+  filter(condition %in% c("Ross River virus infection", "Barmah Forest virus infection", amr_cond)) %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  select(phess_id, url, reporting_group, condition, event_date, defn, investigation_status, event_type) %>% 
+  arrange(reporting_group, condition) 
+
+```
+
+``` {r risk factors, eval=FALSE}
+# iGAS risk factor = IGAS_RISK_FACTORS (not in data extract)
+# RSV, Varicella, influenza - no follow up on risk factors
+
+primary_risk_noncount <- c("Respiratory Syncytial virus", "Varicella zoster infection (Chickenpox)", "Varicella zoster infection (Shingles)", 
+                           "Varicella zoster infection (Unspecified)", "Influenza", "Cryptosporidiosis", "Pertussis")
+
+summary_risk_conditions <- c("Pneumococcal infection (IPD)", "Invasive Group A Streptococcus")
+
+risk_missing <- cond_data1mth %>% 
+  filter(reporting_group!="Sexually Transmissible Infections") %>% 
+  filter(! condition %in% primary_risk_noncount) %>% 
+  filter(investigation_status=="Completed" ) %>% 
+  filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  filter(death_status=="Alive") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id), 
+         primary_exp_count = str_count(primary_exposure, "Primary"), 
+         remarks = case_when(!condition %in%risk_factor_excl & is.na(risk_factors) ~ "Data on risk factors is missing", 
+                             !condition %in%risk_factor_excl & primary_exp_count>1 ~ "More than 1 primary risk factor provided", 
+                             primary_exp_count==0 & !condition %in% c(summary_risk_conditions, "Hepatitis D") ~ "No primary risk factor provided"
+                             )) %>% 
+  filter(!is.na(remarks)) %>% 
+  select(phess_id, url, reporting_group, condition, event_date, defn, event_type, investigation_status, remarks) %>% 
+  arrange(reporting_group, condition)
+
+
+```
+
+``` {r table functions}
+#link = paste0("[", EVENT_ID, "](", 'https://phess.dhhs.vic.gov.au/main.do?CaseID=', EVENT_ID, ")")
+
+set_keytable <- function(group) { # obsolete function
+  table <- filter(key_missing, reporting_group==group) %>% 
+    select(-c(reporting_group, event_type)) %>% 
+    arrange(condition, event_date)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - All completed cases with key data filled in")
+  } else if(nrow(table)>0) {
+    flextable(table, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "remarks")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", remarks = "Remarks", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status") %>% autofit()
+  }
+}
+
+set_keymiss_table <- function(df) {
+  # collect all column names starting with rmk_
+  rmk_col_names <- names(df)[str_detect(names(df), "rmk_")]
+  
+  # construct table
+  table <- df %>% 
+    mutate(remarks = str_remove_all(do.call(paste, c(df[rmk_col_names], sep=", ")), pattern="NA,\\s")) %>% 
+    mutate(remarks = str_remove(remarks, pattern=",\\sNA")) %>% 
+    filter(remarks!="NA") %>% 
+    select(phess_id, url, reporting_group, condition, event_date, defn, event_type, investigation_status, remarks)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - All completed cases with key data filled in")
+  } else if(nrow(table)>0) {
+    # output table to flextable format
+    flextable(table, 
+              col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "remarks")) %>% 
+    compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+    color(j="phess_id", color="#0077CC") %>% 
+    set_header_labels(phess_id = "PHESS ID", condition = "Condition", remarks = "Remarks", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status") %>% autofit()
+  }
+}
+
+set_keymiss_ob_table <- function(df) {
+  # collect all column names starting with rmk_
+  rmk_col_names <- names(df)[str_detect(names(df), "rmk_")]
+  
+  # construct table
+  table <- df %>% 
+    mutate(remarks = str_remove_all(do.call(paste, c(df[rmk_col_names], sep=", ")), pattern="NA,\\s")) %>% 
+    mutate(remarks = str_remove(remarks, pattern=",\\sNA")) %>% 
+    filter(remarks!="NA") %>% 
+    select(phess_id, url, condition, event_date, defn, investigation_status, remarks)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - All completed cases with key data filled in")
+  } else if(nrow(table)>0) {
+    # output table to flextable format
+    flextable(table, 
+              col_keys=c("phess_id", "condition", "event_date", "investigation_status", "event_name", "remarks")) %>% 
+    compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+    color(j="phess_id", color="#0077CC") %>% 
+    set_header_labels(phess_id = "PHESS ID", condition = "Condition", remarks = "Remarks", event_date = "Event date", 
+                    devent_name = "Event name", investigation_status = "Investigation status") %>% autofit()
+  }
+}
+
+
+set_risktable <- function(group) {# obsolete function
+  table <- filter(risk_missing, reporting_group==group) %>% 
+    select(-c(reporting_group, event_type)) %>% 
+    arrange(condition, event_date)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - No missing risk factor data")
+  } else if(nrow(table)>0) {
+    flextable(table, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "remarks")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", remarks = "Remarks", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status" 
+                    ) %>% 
+    autofit()
+  }
+}
+
+set_newtable <- function(group) { # obsolete function
+  table <- filter(new, reporting_group==group) %>% 
+    select(-c(reporting_group, event_type)) %>% 
+    arrange(condition, event_date)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - no cases marked as new")
+  } else if(nrow(table)>0) {
+    flextable(table, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "remarks")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", remarks = "Remarks", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status" 
+                    ) %>% 
+    autofit()
+  }
+}
+
+
+set_inprogress_table <- function(group, mth=2) {
+  if(mth==2) {
+    df = in_progress_mth2
+  } else if(mth==4) {
+    df = in_progress_mth4
+  }
+  
+  table <- filter(df, reporting_group==group) %>% 
+    select(-c(reporting_group, event_type)) %>% 
+    arrange(condition, event_date) %>% 
+    distinct(phess_id, .keep_all=TRUE)
+  
+  if(nrow(table)==0) {
+    cat("Data quality check complete - no cases marked as in progress after 1 month")
+  } else if(nrow(table)>0) {
+    flextable(table, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status") %>% 
+    autofit()
+  }
+}
+
+```
+
+### Blood Borne Viruses
+
+**Cases marked completed with key data missing**
+
+``` {r BBV key table, ft.align="left"}
+bbv_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  #filter(esf_received=="Yes") %>% 
+  #filter(investigation_status=="Completed" ) %>% 
+  filter(reporting_group=="Blood Borne Viruses" | condition %in% hiv_cond) %>% 
+  #filter(death_status=="Alive") %>% 
+  #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  mutate(
+    rmk_testreas = if_else((condition %in% hep_cond | condition %in% hiv_cond) & is.na(test_reason), 
+                           "Reason for testing is missing", NA_character_), 
+    # Hepatitis
+    rmk_onset_date = if_else(condition %in% hep_cond & is.na(cal_onset_date), 
+                             "Calculated onset date is missing", NA_character_), 
+    rmk_injectdrug = if_else(condition %in% hep_cond & is.na(risk_inject_drug), 
+                             "History of injecting drug use not indicated", NA_character_), 
+    rmk_negtest = if_else(condition %in% hep_cond & is.na(neg_test_24m), 
+                          "Negative test past 24mth is missing", NA_character_), 
+    rmk_pcr_b = if_else(condition %in% hepB_cond & is.na(hepb_tested), 
+                        "PCR testing status assessed is missing", NA_character_), 
+    rmk_pcr_c = if_else(condition %in% hepC_cond & is.na(hepc_tested), 
+                        "PCR testing status assessed is missing", NA_character_), 
+    #rmk_tmt = if_else(condition %in% hep_cond & is.na(tmt_offer), "Treatment status is missing", NA_character_), 
+    rmk_vacc = if_else(condition %in% hepB_cond & is.na(vaccinated), 
+                       "Vaccinated detail missing", NA_character_), 
+    rmk_diag_dr = if_else(condition %in% hep_cond & is.na(diag_dr_type), 
+                          "Diagnosing doctor type is missing", NA_character_), 
+    rmk_notifier = if_else(condition %in% hep_cond & is.na(notifier), 
+                           "Notifier is missing", NA_character_), 
+    rmk_risk2yr = if_else(condition %in% hep_cond & 
+                            is.na(sexual_partner_of_opposite_sex_with_answer_description) & 
+                            is.na(sexual_partner_of_same_sex_with_answer_description) & 
+                            is.na(hiv_positive_man_who_has_sex_with_men_msm) & 
+                            is.na(household_contact_with_answer_description) & 
+                            is.na(perinatal_transmission) & 
+                            is.na(imprisonment) & 
+                            is.na(tattoos) & 
+                            is.na(ear_or_body_piercing) & 
+                            is.na(acupuncture) & 
+                            is.na(surgical_procedure) & 
+                            is.na(major_dental_surgery) & 
+                            is.na(haemodialysis) & 
+                            is.na(blood_blood_products_tissue_in_australia) & 
+                            is.na(blood_blood_products_tissue_overseas) & 
+                            is.na(organ_transplantation_in_australia) & 
+                            is.na(organ_transplantation_overseas) & 
+                            is.na(health_care_worker_with_no_documented_exposure) & 
+                            is.na(occupational_needlestick_biohazardous_injury_in_health_care_worker) & 
+                            is.na(occupational_needlestick_biohazardous_injury_in_a_non_health_care_worker) & 
+                            is.na(non_occupational_or_unspecified_needlestick_biohazardous_injury) & 
+                            is.na(has_the_risk_been_unable_to_be_determined) & 
+                            is.na(other_risk_in_the_past_2_years), 
+                          "Risk factor in past 2 years not indicated", NA_character_), 
+    # HIV
+    rmk_hivdate = if_else(condition %in% hiv_cond & is.na(hiv_diag_date), 
+                          "HIV Diagnosis Date is missing", NA_character_), 
+    rmk_hivgender = if_else(condition %in% hiv_cond & is.na(idty_gender), "Identified gender is missing", NA_character_), 
+    rmk_hivtrans = if_else(condition %in% hiv_cond & is.na(trans), 
+                           "Transgender field is missing", NA_character_), 
+    rmk_prilang = if_else(condition %in% hiv_cond & is.na(pri_lang),  
+                          "Language spoken at home is missing", NA_character_), 
+    rmk_prep = if_else(condition %in% hiv_cond & is.na(prep_ever), 
+                       "PrEP field is missing", NA_character_), 
+    rmk_hivtype = if_else(condition %in% hiv_cond & is.na(hiv_virus_type_identified), 
+                          "HIV type infection is missing", NA_character_), 
+    rmk_hivprdiag = if_else(condition %in% hiv_cond & is.na(prev_hiv_diag), 
+                            "Previous dianostis of HIV field is missing", NA_character_), 
+    rmk_hivprneg = if_else(condition %in% hiv_cond & is.na(prev_neg_hiv), 
+                           "Previous negative HIV diagnosis field missing", NA_character_), 
+    rmk_hivprlab = if_else(condition %in% hiv_cond & is.na(prev_nonlab_hiv), 
+                           "Previous non-lab HIV test missing", NA_character_), 
+    rmk_hivcd4 = if_else(condition %in% hiv_cond & is.na(cd4_count_done), 
+                         "CD4 count field is missing", NA_character_), 
+    rmk_hivvirload = if_else(condition %in% hiv_cond & is.na(viral_load), 
+                             "HIV viral load is missing", NA_character_), 
+    rmk_hivclinstat = if_else(condition %in% hiv_cond & is.na(clin_status_spec_col), 
+                              "Clinical status at time of specimen collection is missing", NA_character_), 
+    rmk_seroconv = if_else(condition %in% hiv_cond & is.na(seroconv_12m), 
+                           "Seroconversion illness missing", NA_character_), 
+    rmk_infacq = if_else(condition %in% hiv_cond & is.na(infect_where), 
+                         "Where infection acquired is missing", NA_character_), 
+    rmk_eventclass = if_else(condition %in% hiv_cond & is.na(event_class), 
+                             "Event classification field is missing", NA_character_), 
+    rmk_plhiv = if_else(condition %in% hiv_cond & is.na(hiv_vic), 
+                        "Case counted as Victorian case is missing", NA_character_), 
+    rmk_diseaseclass = if_else(condition %in% hiv_cond & is.na(hiv_class), 
+                               "HIV disease classification is missing", NA_character_), 
+    rmk_firstdiag = if_else(condition %in% hiv_cond & is.na(hiv_first), 
+                            "HIV first diagnosed date is missing", NA_character_), 
+    rmk_firstdiagwhere = if_else(condition %in% hiv_cond & is.na(hiv_first_place), 
+                                 "HIV first dianosis place is missing", NA_character_), 
+    rmk_exposure = if_else(condition %in% hiv_cond & is.na(exp_code), 
+                           "HIV exposure code is missing", NA_character_)
+    )
+
+
+set_keymiss_table(bbv_key_missing_rmk)
+
+```
+<br>
+
+**Cases still marked as in progress after 1 month**
+
+``` {r BBV inprogress table, ft.align="left"}
+set_inprogress_table("Blood Borne Viruses", 4)
+
+```
+<br><br>
+
+
+### Enteric Diseases
+
+**Cases marked completed with key data missing**
+
+``` {r ENT key table, ft.align="left"}
+ent_key_missing_nonshig <- key_missing_rmk %>% 
+  filter(reporting_group=="Enteric Diseases") %>% 
+  filter(condition!="Shigellosis") %>% 
+  distinct(phess_id, .keep_all=TRUE) %>% 
+  mutate(
+    rmk_presented = if_else(is.na(presented_to), "Presented to field missing", NA_character_), 
+    rmk_admitdate = if_else(presented_to=="Hospital admission" & is.na())
+  )
+
+# shigella <- condition.clean %>%
+#   filter(condition=="Shigellosis")
+
+#shigella_key_missing <- shigella %>% 
+shigella_key_missing <- key_missing_rmk %>% 
+  filter(condition=="Shigellosis") %>% 
+  #filter(defn %in% c("Confirmed", "Probable")) %>% 
+  #filter(investigation_status=="Completed") %>% 
+  arrange(phess_id, tests_results_for_this_specimen_type) %>% 
+  group_by(phess_id) %>% 
+  slice_head(n = 1) %>% 
+  mutate(
+    rmk_exposure = if_else(! risk_factors %in%  c("Travel overseas", "Travel within Australia") & is.na(exposure_site), 
+                           "Exposure site is missing", NA_character_), 
+    rmk_tmt = if_else(is.na(treated_for_this_illness_current_infection), "Treatment information missing", NA_character_), 
+    rmk_presented = if_else(is.na(presented_to), "Presented to field missing", NA_character_), 
+    
+    rmk_symp_onset = if_else(is.na(sympt_onset), "Symptom onset date missing", NA_character_), 
+    rmk_probable = if_else(tests_results_for_this_specimen_type=="Culture" & 
+                             tests_results_for_this_specimen_result=="Negative" & defn=="Confirmed", 
+                           "Negative culture should be marked Probable case classification", NA_character_)
+  )
+
+ent_key_missing_rmk <- bind_rows(ent_key_missing_nonshig, shigella_key_missing)
+
+set_keymiss_table(ent_key_missing_rmk)
+
+# shig_exp_site <- shigella %>% 
+#   select(phess_id, risk_factors, exposure_site) %>% 
+#   filter(is.na(exposure_site))
+# shig_exp_site %>% filter(risk_factors %in% c("Male to male sexual contact", "Risk unable to be determined"))
+# shig_msm_rtbd <- shigella %>% 
+#   select(phess_id, risk_factors, exposure_site) %>% 
+#   filter(risk_factors %in% c("Male to male sexual contact", "Risk unable to be determined", "Travel within Australia"))
+# janitor::tabyl(shig_exp_site, risk_factors)
+# 
+# special_case <- condition.clean %>% 
+#   filter(phess_id=="320255902279") %>% 
+#   select(phess_id, primary_exposure, risk_factors, exposure_site)
+
+```
+<br>
+
+**Cryptosporidiosis cases who participated in swimming or water sports marked completed with no exposure site details**
+
+```{r crypto risk, ft.align="left"}
+crypto_risk <- cond_data1mth %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  filter(swim_watersp=="Yes") %>% 
+  select(phess_id, condition, event_date, defn, event_type, investigation_status, esf_received, exposure_site, recent_travel_aus, risk_factors, exposure_site, swim_watersp) %>% 
+  filter(investigation_status=="Completed") %>% 
+  filter(defn!="Rejected") %>% 
+  filter(is.na(exposure_site)) %>% 
+  filter(risk_factors=="Participated in swimming or water sports") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id), 
+         remarks = "Exposure site details missing")
+
+flextable(crypto_risk, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "remarks")) %>% 
+  compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+  color(j="phess_id", color="#0077CC") %>% 
+  set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status", remarks = "Remarks") %>% 
+  autofit()
+
+```
+<br>
+
+**Cases still marked as in progress after 1 month**
+
+``` {r ENT inprogress table, ft.align="left"}
+set_inprogress_table("Enteric Diseases")
+
+```
+<br><br>
+
+### Sexually Transmissible Diseases
+
+**Cases marked completed with key data missing**
+
+``` {r STI key table, ft.align="left"}
+sti_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  #filter(esf_received=="Yes") %>% 
+  #filter(investigation_status=="Completed" ) %>% 
+  filter(reporting_group=="Sexually Transmissible Infections") %>% 
+  filter(!condition %in% hiv_cond) %>% 
+  filter(condition!="Mpox") %>% 
+  #filter(death_status=="Alive") %>% 
+  #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  mutate(
+    rmk_gender = if_else(condition != "Chlamydia trachomatis infection" & is.na(idty_gender), 
+                         "Identified gender is missing", NA_character_), 
+    rmk_symptom = if_else(condition=="Gonococcal infection" & is.na(symptoms), 
+                          "Symptoms field not indicated", NA_character_), 
+    rmk_pregnant = if_else((condition=="Gonococcal infection" | condition %in% syph_cond) & sex=="Female" & is.na(pregnant), 
+                           "Currently pregnant field not indicated", NA_character_), 
+    rmk_siteinf = if_else(condition=="Gonococcal infection" & is.na(site_of_infection_or_specimen), 
+                          "Site of infection is missing", NA_character_), 
+    rmk_symponset = if_else(condition%in%syph_cond & is.na(sympt_onset), 
+                            "Symptom onset date is missing", NA_character_), 
+    rmk_antenatal = if_else(condition %in% syph_cond & pregnant=="Yes" & is.na(antenatal), 
+                            "Antenatal care pregnancy stage is missing", NA_character_), 
+    rmk_tmt14d = if_else(condition %in% syph_cond & pregnant=="Yes" &  is.na(did_the_case_receive_treatment_for_syphilis_within_14_days_of_diagnosis), 
+                         "Treatment within 14 days of diagnosis is not indicated", NA_character_), 
+    rmk_previnfpreg = if_else(condition %in% syph_cond & pregnant=="Yes" & is.na(has_the_case_previously_been_infected_during_the_current_pregnancy), 
+                              "Previously infected during current pregnancy is missing", NA_character_),
+    rmk_previnfprior = if_else(condition %in% syph_cond & pregnant=="Yes" & is.na(has_the_case_ever_had_a_syphilis_infection_prior_to_the_current_pregnancy), 
+                               "Infection prior to current pregnancy is missing", NA_character_), 
+    rmk_syphcong = if_else(condition=="Syphilis - Congenital" & is.na(clinical_signs_of_congenital_syphilis), 
+                           "Clinical signs of congenital syphilis is missing", NA_character_), 
+    rmk_sexexp = if_else(condition != "Chlamydia trachomatis infection" & is.na(sexual_exposure), 
+                         "Sexual exposure field is missing", NA_character_)
+    ) 
+
+set_keymiss_table(sti_key_missing_rmk)
+
+```
+<br>
+
+**Mpox cases with specific key data missing**
+```{r mpox}
+mpox <- filter(key_missing_rmk, condition=="Mpox") %>% 
+  select(phess_id, event_date, ds_contacts_ident, us_contacts_ident, mpox_iso_clear)
+
+mpox_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  #filter(esf_received=="Yes") %>% 
+  #filter(investigation_status=="Completed" ) %>% 
+  filter(condition=="Mpox") %>% 
+  #filter(death_status=="Alive") %>% 
+  #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  mutate(
+    rmk_mpox_vac = if_else(is.na(vaccinated), "Vaccine status missing", NA_character_), 
+    rmk_mpox_vac_na = if_else(condition=="Mpox" & vaccinated=="Not applicable", 
+                              "Vaccination marked Not applicable", NA_character_), 
+    rmk_mpox_vac_date = if_else(vaccinated=="Yes" & is.na(date_given), 
+                                "Vaccine date is missing", NA_character_), 
+    rmk_serogrp = if_else(is.na(serogrp), "Serogroup/subtype missing", NA_character_), 
+    rmk_gender = if_else(is.na(idty_gender), "Identified gender is missing", NA_character_), 
+    rmk_lang = if_else(is.na(pri_lang), "Language spoken at home is missing", NA_character_), 
+    rmk_symp_onset = if_else(is.na(sympt_onset), "Symptom onset data missing", NA_character_), 
+    rmk_presented = if_else(is.na(presented_to), "Presented to field is missing", NA_character_), 
+    rmk_sexexp = if_else(is.na(sexual_exposure), "Gender of sexual partners missing", NA_character_), 
+    rmk_mpox_ds = if_else(is.na(ds_contacts_ident), "Downstream contacts number missing", NA_character_), 
+    rmk_mpox_ds_no = if_else(is.na(ds_contacts_nocontact), 
+                             "Downstream contacts unable to be contacted is missing", NA_character_), 
+    rmk_mpox_us = if_else(is.na(us_contacts_ident), "Upstream contacts number missing", NA_character_), 
+    rmk_mpox_us_no = if_else(is.na(us_contacts_nocontact), 
+                             "Upstream contacts unable to be contacted is missing", NA_character_), 
+    #rmk_mpox_iso = if_else(condition=="Mpox" & sympt_onset < (Sys.Date() - days(14)) & is.na(mpox_iso_clear), "isolation clear missing", NA_character_), 
+    rmk_mpox_msm = if_else(is.na(msm_contact_past21days), 
+                           "M2M sexual contact past 21 days is missing", NA_character_), 
+    rmk_mpox_contact = if_else(is.na(mpox_contact_past21days), 
+                               "Contact with confirmed or probable Mpox case past 21 days is missing", 
+                               NA_character_), 
+    rmk_mpox_contsusp = if_else(is.na(mpox_suspcontact_past21days), 
+                                "Contact with suspected Mpox case past 21 days is missing", 
+                                NA_character_), 
+    rmk_mpox_oscont = if_else(is.na(return_overseas_contact_past21days), 
+                              "Contact with recently returned from overseas person past 21 days is missing", 
+                              NA_character_), 
+    rmk_mpox_multiple = if_else(is.na(multiple_sexual_partners_past21days), 
+                                "Case had multiple sexual partners past 21 days is missing", NA_character_), 
+    rmk_mpox_sopv = if_else(is.na(sopv_past21days), 
+                            "Case attended SOPV or engaged in group sex is missing", NA_character_), 
+    rmk_travel_os = if_else(is.na(travel_os_past21days), 
+                            "Case travel overseas prior to illness is missing", NA_character_), 
+    rmk_travel_is = if_else(is.na(travel_is_past21days), 
+                            "Case travel interstate prior to illness is missing", NA_character_), 
+    rmk_recent_travel = if_else(is.na(recent_travel_aus), 
+                                "Case recently travelled is missing", NA_character_), 
+    rmk_localdr = if_else(is.na(local_family_treating_doctor), 
+                          "Local doctor is missing", NA_character_)
+    ) 
+
+set_keymiss_table(mpox_key_missing_rmk)
+
+```
+
+
+``` {r STI risk table, ft.align="left", eval=FALSE}
+#**Cases marked completed with sexual exposure risk factor data missing**
+#*
+sti_tab <- cond_data1mth %>% 
+  filter(reporting_group=="Sexually Transmissible Infections") %>% 
+  select(phess_id, reporting_group, condition, event_date, defn, event_type, investigation_status, esf_received, sexual_exposure) %>% 
+  filter(esf_received=="Yes") %>% 
+  filter(investigation_status=="Completed") %>% 
+  filter(defn!="Rejected") %>% 
+  filter(is.na(sexual_exposure)) %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  arrange(condition) %>% 
+  select(-c(reporting_group, event_type))
+
+flextable(sti_tab, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status", "sexual_exposure")) %>% 
+  compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+  color(j="phess_id", color="#0077CC") %>% 
+  set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status", 
+                    sexual_exposure = "Sexual exposure") %>% 
+  autofit()
+
+```
+<br>
+
+**Cases still marked as in progress after 1 month**
+
+``` {r STI inprogress table, ft.align="left"}
+set_inprogress_table("Sexually Transmissible Infections")
+
+```
+<br><br>
+
+
+### Vaccine Preventable Diseases
+
+**Cases marked completed with key data missing**
+
+``` {r VPD key table, ft.align="left"}
+vpd_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  filter(reporting_group=="Vaccine Preventable Diseases") %>% 
+  filter(! (condition=="Pertussis" & (is_the_case_a_healthcare_staff_member_of_a_maternity_and_or_neonatal_unit=="No" | is.na(is_the_case_a_healthcare_staff_member_of_a_maternity_and_or_neonatal_unit)))) %>% 
+  #filter(! (condition=="Pertussis" & age>10)) %>% 
+  mutate(
+    rmk_pregnant = if_else((condition=="Mumps" | condition=="Meningococcal infection" ) & 
+                             is.na(pregnant), 
+                           "Pregnant at time of notification missing", NA_character_), 
+    rmk_presented = if_else((condition=="Mumps" | 
+                               condition=="Meningococcal infection" | 
+                               condition=="Pneumococcal infection (IPD)") & 
+                              is.na(presented_to), 
+                            "Presented to field missing", NA_character_), 
+    rmk_symp_onset = if_else((condition=="Mumps" | condition=="Meningococcal infection" ) & 
+                               is.na(sympt_onset), 
+                             "Symptom onset date missing", NA_character_), 
+    # Pertussis specific checks
+    rmk_pertuss_vacc = if_else(condition=="Pertussis" & age<10 & is.na(vaccinated), 
+                       "Vaccine status is missing", NA_character_), 
+    # rmk_healthcare_worker = if_else(condition=="Pertussis" & is_the_case_a_healthcare_staff_member_of_a_maternity_and_or_neonatal_unit=="Yes" & is.na(vaccinated), 
+    #                                 "Vaccine status is missing", NA_character_), 
+    # rmk_ivw = if_else(condition=="Pertussis" & between(age, 0, 6) & is.na(ncov_interview), 
+    #                   "Interview check is missing", NA_character_), 
+    # Mumps
+    rmk_vacc_date = if_else(condition=="Mumps" & vaccinated=="Yes" & is.na(date_given), 
+                            "Vaccine date missing", NA_character_), 
+    rmk_vacc_source = if_else(condition=="Mumps" & vaccinated=="Yes" & is.na(source_of_information), 
+                              "Vaccine source missing", NA_character_), 
+    rmk_contact12_25d = if_else(condition=="Mumps" & is.na(contact_person_12_25days), 
+                                "Case contact with person with similar illness 12-25 days prior missing", NA_character_), 
+    # IMD
+    rmk_vacc_status = if_else(condition=="Meningococcal infection" & 
+                                is.na(vaccination_status_for_answer_disease), 
+                              "Vaccination status missing", NA_character_), 
+    rmk_imd_chronic = if_else(condition=="Meningococcal infection" & 
+                                is.na(does_the_case_have_a_chronic_disease), 
+                              "Chronic disease is blank", NA_character_), 
+    rmk_imd_immunocomp = if_else(condition=="Meningococcal infection" & 
+                                is.na(is_the_case_immunocompromised), 
+                              "Immunocompromised is blank", NA_character_), 
+    rmk_imd_anot_ill = if_else(condition=="Meningococcal infection" & 
+                                is.na(does_the_case_have_another_illness), 
+                              "Another illness is blank", NA_character_), 
+    rmk_asplenia = if_else(condition=="Meningococcal infection" & 
+                                is.na(does_the_case_have_anatomical_or_functional_asplenia), 
+                              "Asplenia is blank", NA_character_), 
+    rmk_csf_leak = if_else(condition=="Meningococcal infection" & 
+                                is.na(does_the_case_have_a_csf_leak), 
+                              "CSF leak is blank", NA_character_), 
+    rmk_imd_smoking = if_else(condition=="Meningococcal infection" & 
+                                is.na(smoking_risk), 
+                              "Smoking risk is blank", NA_character_), 
+    rmk_imd_hh_smoking = if_else(condition=="Meningococcal infection" & 
+                                is.na(household_smoking_risk), 
+                              "Household smoking risk is blank", NA_character_), 
+    rmk_travel_os = if_else(condition=="Meningococcal infection" & 
+                                is.na(recent_travel_overseas), 
+                              "Recent travel overseas is blank", NA_character_), 
+    rmk_travel_aus = if_else(condition=="Meningococcal infection" & 
+                                is.na(recent_travel_aus), 
+                              "Recent travel Australia is blank", NA_character_), 
+    rmk_exp_site = if_else(condition=="Meningococcal infection" & 
+                                is.na(exposure_site), 
+                              "Exposure site is blank", NA_character_), 
+    # IPD
+    rmk_manifest = if_else((condition=="Pneumococcal infection (IPD)" | condition=="Invasive Group A Streptococcus") & 
+                                is.na(manifestation), 
+                              "Manifestation missing", NA_character_), 
+    rmk_ipd_anot_ill = if_else((condition=="Pneumococcal infection (IPD)" | condition=="Invasive Group A Streptococcus") & 
+                                is.na(does_the_case_have_another_illness), 
+                              "Another illness is missing", NA_character_), 
+    rmk_ipd_anot_ill_yes = if_else(does_the_case_have_another_illness=="Yes" & 
+                                is.na(specify_419), 
+                              "Another illness to specify is missing", NA_character_), 
+    rmk_ipd_chronic = if_else((condition=="Pneumococcal infection (IPD)" | condition=="Invasive Group A Streptococcus") & 
+                                is.na(does_the_case_have_a_chronic_disease), 
+                              "Chronic disease is blank", NA_character_), 
+    rmk_ipd_chronic_yes = if_else(does_the_case_have_a_chronic_disease=="Yes" & 
+                                is.na(specify_181), 
+                              "Chronic disease specify is missing", NA_character_), 
+    rmk_ipd_immunocomp = if_else((condition=="Pneumococcal infection (IPD)" | condition=="Invasive Group A Streptococcus") & 
+                                is.na(is_the_case_immunocompromised), 
+                              "Immunocompromised is blank", NA_character_), 
+    rmk_ipd_immunocomp_des = if_else(is_the_case_immunocompromised=="Yes" & 
+                                is.na(describe), 
+                              "Immunocompromised describe is missing", NA_character_), 
+    rmk_ipd_immunocomp_spec = if_else(is_the_case_immunocompromised=="Yes" & 
+                                is.na(specify_186), 
+                              "Immunocompromised specify is missing", NA_character_), 
+    rmk_chromosome = if_else(condition=="Pneumococcal infection (IPD)" & 
+                                is.na(does_case_have_a_congenital_or_chromosomal_abnormality), 
+                              "Chromosomal abnormality is blank", NA_character_), 
+    rmk_chromosome_yes = if_else(does_case_have_a_congenital_or_chromosomal_abnormality=="Yes" &
+                                is.na(specify_420),
+                              "Chromosomal abnormality specify is blank", NA_character_),
+    rmk_ipd_smoking = if_else(condition=="Pneumococcal infection (IPD)" & 
+                                is.na(smoking_risk), 
+                              "Smoking risk is blank", NA_character_), 
+    rmk_ipd_hh_smoking = if_else(condition=="Pneumococcal infection (IPD)" & 
+                                is.na(household_smoking_risk), 
+                              "Household smoking risk is blank", NA_character_), 
+    rmk_ipd_diagbefore = if_else(condition=="Pneumococcal infection (IPD)" & 
+                            is.na(has_case_been_diagnosed_tested_positive_for_answer_disease_before), 
+                          "IPD has been diagnosed before missing", NA_character_), 
+    rmk_ipd_diagbefore_yes = if_else(has_case_been_diagnosed_tested_positive_for_answer_disease_before=="Yes" & is.na(date_421), 
+                                      "Previous IPD diagnosis date missing", NA_character_), 
+    rmk_ipd_icu = if_else(condition=="Pneumococcal infection (IPD)" & 
+                            presented_to %in% c("Hospital admission", "Hospital emergency") & is.na(icu), 
+                          "IPD ICU status missing", NA_character_), 
+    # rmk_ipd_pcr = if_else(condition=="Pneumococcal infection (IPD)" & is.na(pcr_diag_only), 
+    #                       "IPD diagnosed by PCR missing", NA_character_), 
+    # iGAS
+    rmk_vacc_source = if_else(condition=="Invasive Group A Streptococcus" & vaccinated=="Yes" & is.na(source_of_information), 
+                              "Vaccination source of info missing", NA_character_), 
+    rmk_surgery = if_else(condition=="Invasive Group A Streptococcus" & is.na(did_the_case_require_surgical_intervention_related_to_this_illness), 
+                          "Surgical intervention required missing", NA_character_), 
+    rmk_ecmo = if_else(condition=="Invasive Group A Streptococcus" & is.na(received_extracorporeal_membrane_oxygenation_ecmo), 
+                          "Received ECMO missing", NA_character_), 
+    rmk_hosp_ipc = if_else(condition=="Invasive Group A Streptococcus" & is.na(hospital_infection_control_notified), 
+                          "Hospital infection control notified missing", NA_character_), 
+    rmk_treated = if_else(condition=="Invasive Group A Streptococcus" & is.na(treated_for_this_illness_current_infection), 
+                          "Treated for this illness missing", NA_character_), 
+    rmk_consent_contact = if_else(condition=="Invasive Group A Streptococcus" & is.na(dr_consent), 
+                          "doctor has provided consent to contact case missing", NA_character_), 
+    rmk_igas_contact = if_else(condition=="Invasive Group A Streptococcus" & is.na(has_the_case_had_contact_with_a_confirmed_igas_case_in_the_previous_3_months), 
+                          "Contact with iGAS case previous 3 months missing", NA_character_), 
+    rmk_igas_risk = if_else(condition=="Invasive Group A Streptococcus" & is.na(the_case_has_this_risk_factor), 
+                          "iGAS risk factor missing", NA_character_), 
+    rmk_igas_inst = if_else(condition=="Invasive Group A Streptococcus" & 
+                                 is.na(have_there_been_any_other_i_gas_cases_in_any_institutional_settings_associated_with_the_case_in_the_last_3_months), 
+                               "Any iGAS case in institutional settings previous 3 months missing", NA_character_), 
+    rmk_igas_hh = if_else(condition=="Invasive Group A Streptococcus" & 
+                                 is.na(have_there_been_any_non_invasive_gas_cases_in_the_same_household_or_in_institutional_settings_associated_with_the_case_recently), 
+                          "Any non iGAS case in household of institutional settings missing", NA_character_), 
+    rmk_contact_mgt = if_else(condition=="Invasive Group A Streptococcus" & is.na(was_contact_management_undertaken_for_this_case), 
+                              "Contact management undertaken with case missing", NA_character_), 
+    rmk_give_birth = if_else(condition=="Invasive Group A Streptococcus" & sex=="Female" & is.na(did_the_case_give_birth_in_the_28_days_prior_to_symptom_onset), 
+                             "Give birth in 28 days prior missing", NA_character_), 
+    rmk_neonate = if_else(condition=="Invasive Group A Streptococcus" & between(age, 0, 1) & is.na(is_the_case_a_neonate_with_symptom_onset_within_28_days_of_birth), 
+                          "Give birth in 28 days prior missing", NA_character_), 
+    rmk_edu_mat = if_else(condition=="Invasive Group A Streptococcus" & is.na(educational_materials_provided_to_case), 
+                          "Educational materials provided to case missing", NA_character_), 
+    # IPD and iGAS
+    rmk_summ_risk = if_else((condition=="Pneumococcal infection (IPD)" | condition=="Invasive Group A Streptococcus") & 
+                              is.na(summary_risk_factor), 
+                            "Summary risk factor is missing", NA_character_) 
+  ) 
+
+set_keymiss_table(vpd_key_missing_rmk)
+
+
+pertussis <- vpd_key_missing_rmk <- key_missing_rmk %>% 
+  filter(reporting_group=="Vaccine Preventable Diseases") %>% 
+  filter(! (condition=="Pertussis" & (is_the_case_a_healthcare_staff_member_of_a_maternity_and_or_neonatal_unit=="No" | is.na(is_the_case_a_healthcare_staff_member_of_a_maternity_and_or_neonatal_unit)))) %>% 
+  filter(condition=="Pertussis") 
+```
+<br>
+
+**Cases still marked as in progress after 1 month**
+
+``` {r VPD inprogress table, ft.align="left"}
+set_inprogress_table("Vaccine Preventable Diseases")
+
+```
+<br><br>
+
+
+### Vector Borne Diseases
+
+**Cases marked completed with key data missing**
+
+``` {r VBD key table, ft.align="left"}
+#set_keytable("Vector Borne Diseases")
+
+vbd_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  filter(reporting_group=="Vector Borne Diseases") %>% 
+  mutate(
+    # MU
+    rmk_sympt_onset = if_else(condition=="Mycobacterium ulcerans" & is.na(sympt_onset), 
+                        "Symptom onset date missing", NA_character_), 
+    rmk_cal_onset = if_else(condition=="Mycobacterium ulcerans" & is.na(cal_onset_date), 
+                        "Calculated onset date missing", NA_character_), 
+    rmk_tmt_form = if_else(condition=="Mycobacterium ulcerans" & is.na(treatment_outcomes_form_requested), 
+                           "Treatment outcomes from requested missing", NA_character_), 
+    rmk_summary_risk = if_else(condition %in%risk_factor_excl & is.na(summary_risk_factor), 
+                               "Data on summary risk factor is missing", NA_character_), 
+    rmk_esf_collect = if_else(condition=="Mycobacterium ulcerans" & is.na(esf_received), 
+                              "ESF collected missing", NA_character_), 
+    rmk_esf_request = if_else(condition=="Mycobacterium ulcerans" & is.na(enhanced_surveillance_requested_from_local_doctor_or_case), 
+                              "ESF requested missing", NA_character_), 
+    rmk_localdr = if_else(condition=="Mycobacterium ulcerans" & is.na(local_family_treating_doctor), 
+                          "Local doctor is missing", NA_character_), 
+    rmk_manifest = if_else(condition=="Mycobacterium ulcerans" & is.na(manifestation), 
+                              "Manifestation missing", NA_character_), 
+    rmk_lesion_size = if_else(condition=="Mycobacterium ulcerans" & is.na(symptoms), 
+                              "Manifestation lesion size missing", NA_character_), 
+    rmk_endemic = if_else(condition=="Mycobacterium ulcerans" & is.na(endemic_area_past12mths), 
+                              "Endemic area missing", NA_character_), 
+    rmk_endemic_type = if_else(endemic_area_past12mths=="Yes" & is.na(type_of_contact_with_endemic_area), 
+                              "Type of contact with endemic area missing", NA_character_), 
+    rmk_tmt_type = if_else(condition=="Mycobacterium ulcerans" & is.na(treatment_type), 
+                              "Treatment type missing", NA_character_), 
+    rmk_tmt_progress = if_else(condition=="Mycobacterium ulcerans" & is.na(treatment_progress), 
+                              "Treatment progress missing", NA_character_), 
+    rmk_cause_inf = if_else(condition=="Mycobacterium ulcerans" & is.na(event_cause), 
+                              "Patient reported event that may cause infection missing", NA_character_), 
+    # JEV
+    rmk_vaccine = if_else(condition=="Japanese encephalitis" & is.na(vaccinated), 
+                          "Vaccinated data missing", NA_character_), 
+    rmk_vacc_status = if_else(condition=="Japanese encephalitis" & is.na(vaccination_status_for_answer_disease), 
+                              "Vaccination status missing", NA_character_), 
+    rmk_presented = if_else(condition=="Japanese encephalitis" & is.na(presented_to), 
+                            "Presented to missing", NA_character_)
+  ) 
+
+set_keymiss_table(vbd_key_missing_rmk)
+
+```
+<br>
+
+**Cases still marked as in progress after 1 month, after 3 months for RRV and BFV and after 6 months for MU**
+
+``` {r VBD inprogress table, ft.align="left"}
+vbd_inprogress_2m <- in_progress_mth2 %>% 
+  filter(reporting_group=="Vector Borne Diseases") %>% 
+  filter(! condition %in% c("Ross River virus infection", "Barmah Forest virus infection", "Mycobacterium ulcerans")) %>% 
+  select(-c(reporting_group, event_type)) %>% 
+  arrange(condition, event_date) %>% 
+  distinct(phess_id, .keep_all=TRUE)
+
+vbd_inprogress_4m <- in_progress_mth4 %>% 
+  filter(reporting_group=="Vector Borne Diseases") %>% 
+  filter(condition %in% c("Ross River virus infection", "Barmah Forest virus infection")) %>% 
+  select(-c(reporting_group, event_type)) %>% 
+  arrange(condition, event_date) %>% 
+  distinct(phess_id, .keep_all=TRUE)
+
+vbd_inprogress_mu <- cond_data_mth7 %>% 
+  filter(investigation_status == "In progress") %>% 
+  filter(condition =="Mycobacterium ulcerans") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  select(phess_id, url, condition, event_date, defn, investigation_status) %>% 
+  arrange(condition, event_date) %>% 
+  distinct(phess_id, .keep_all=TRUE)
+
+
+vbd_inprogress_table <- bind_rows(vbd_inprogress_2m, vbd_inprogress_4m, vbd_inprogress_mu)
+
+  
+if(nrow(vbd_inprogress_table)==0) {
+  cat("Data quality check complete - no cases marked as in progress after 1 month")
+  } else if(nrow(vbd_inprogress_table)>0) {
+    flextable(vbd_inprogress_table, col_keys=c("phess_id", "condition", "event_date", "defn", "investigation_status")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    defn = "Case classification", investigation_status = "Investigation status") %>% 
+    autofit()
+  }
+
+    
+```
+<br><br>
+
+
+### Zoonotic Diseases
+
+**Cases marked completed with key data missing**
+
+``` {r ZOO key table, ft.align="left"}
+#set_keytable("Zoonotic")
+
+zoo_key_missing_rmk <- key_missing_rmk %>% 
+  filter(reporting_group=="Zoonotic") %>% 
+  filter(condition != "Mpox") %>% 
+  distinct(phess_id, .keep_all=TRUE)
+
+set_keymiss_table(zoo_key_missing_rmk)
+
+```
+<br>
+
+**Cases still marked as in progress after 1 month**
+
+``` {r ZOO inprogress table, ft.align="left"}
+set_inprogress_table("Zoonotic")
+
+```
+<br><br>
+
+
+### Other Conditions
+
+**Cases marked completed with key data missing**
+
+``` {r OTH key table, ft.align="left"}
+#set_keytable("Other Conditions")
+
+oth_key_missing_rmk <- key_missing_rmk %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  filter(reporting_group=="Other Conditions") %>% 
+  mutate(
+    # AMR
+    rmk_eventtype = if_else(condition %in% amr_cond & event_type != "Case", 
+                            "Event type is not classified as case", NA_character_), 
+    rmk_healthcare = if_else(condition %in% amr_cond & overseas_travel_in_the_last_4_years=="Yes" &  is.na(did_the_case_receive_any_medical_treatment_or_procedures_in_this_country), 
+                             "Medical treatment or procedure in country not indicated", NA_character_), 
+    rmk_hcfacility = if_else(condition %in% amr_cond & overseas_travel_in_the_last_4_years=="Yes" & is.na(did_the_case_visit_a_healthcare_facility_in_this_country), 
+                             "Visit to healthcare facility in country not indicated", NA_character_)
+  ) 
+
+set_keymiss_table((oth_key_missing_rmk))
+
+amr_grp <- filter(cond_data1mth, condition %in% amr_cond) %>% distinct(phess_id, .keep_all=TRUE)
+
+```
+<br>
+
+**Cases still marked as in progress after 3 months**
+
+``` {r OTH inprogress table, ft.align="left"}
+set_inprogress_table("Other Conditions", 4)
+
+```
+<br><br>
+
+### Outbreaks
+
+**Check for outbreaks that have not yet been marked for NEPHU**
+
+``` {r nephu outbreaks}
+outbreak_nephu <- outbreak.raw %>% 
+  filter(between(event_date, as.Date(most_recent_date - days(7)), as.Date(most_recent_date))) %>% 
+  filter(is.na(local_public_health_unit)) %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  select(phess_id, url, event_date, event_name, city, condition) %>% 
+  mutate(event_date = ymd(event_date))
+
+
+if(nrow(outbreak_nephu)==0) {
+    cat("Data quality check complete - no outbreaks not yet assigned to NEPHU")
+  } else if(nrow(outbreak_nephu)>0) {
+    flextable(outbreak_nephu, col_keys=c("phess_id", "condition", "event_date", "event_name", "city")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+  color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    event_name = "Event name", city = "City") %>% 
+      autofit()
+  }
+```
+<br>
+
+**Outbreaks left as "New"**
+
+``` {r outbreaks new}
+outbreak_new <- ob_data1mth %>%
+  filter(investigation_status=="New") %>%
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>%
+  select(phess_id, url, event_date, event_name, condition, investigation_status)
+
+if(nrow(outbreak_new)==0) {
+    cat("Data quality check complete - no outbreaks marked as New")
+  } else if(nrow(outbreak_new)>0) {
+    flextable(outbreak_new, col_keys=c("phess_id", "condition", "event_date", "investigation_status", "event_name")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", condition = "Condition", event_date = "Event date", 
+                    investigation_status = "Investigation status", event_name = "Event name") %>% 
+      autofit()
+  }
+
+```
+<br>
+
+**Legionellosis outbreaks status is still open after 90 days from the most recent case and/or investigation not marked Completed**
+
+```{r outbreaks legion}
+legion_open <- legion_ob %>% 
+  filter(status=="Open") %>% 
+  mutate(over90days = if_else(onset_date_last + days(90) < Sys.Date(), "Yes", "No")) %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+  filter(over90days=="Yes") %>% 
+  select(phess_id, url, event_date, event_name, organism, investigation_status)
+  
+
+
+if(nrow(legion_open)==0) {
+    cat("Data quality check complete - no legionellosis outbreak still marked as open after 90 days")
+  } else if(nrow(legion_open)>0) {
+    flextable(legion_open, col_keys=c("phess_id", "organism", "event_date", "investigation_status", "event_name", "remarks")) %>% 
+      compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
+      color(j="phess_id", color="#0077CC") %>% 
+      set_header_labels(phess_id = "PHESS ID", organism = "Organism", event_date = "Event date", 
+                    investigation_status = "Investigation status", event_name = "Event name") %>% 
+      autofit()
+  }
+
+```
+
+<br><br>
+
+### Respiratory Outbreaks
+
+**Respiratory outbreaks marked Completed or In progress with missing data**
+
+``` {r outbreaks, ft.align="left"}
+resp_ob_data_rmk <- resp_ob_data1mth %>%  
+  #filter(between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
+  filter(investigation_status=="Completed" | investigation_status=="In progress") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id),
+         rmk_pc = if_else(is.na(postcode), "Postcode is missing", NA_character_), 
+         rmk_lga = if_else(is.na(lga), "LGA is missing", NA_character_), 
+         rmk_txm = if_else(is.na(txm_type), "Transmission type is missing", NA_character_), 
+         rmk_fc = if_else(is.na(facility_class), "Facility classification is missing", NA_character_), 
+         rmk_orgm = if_else(is.na(organism), "Organism is missing", NA_character_), 
+         rmk_name = if_else(is.na(name), "Exposure site name is missing", NA_character_), 
+         rmk_expsite = if_else(is.na(exposure_site), "Exposure site is missing", NA_character_), 
+         rmk_racf.id = if_else(is.na(racf_id) & setting=="Aged care", "RACF ID is missing", NA_character_), 
+         rmk_atrisk = if_else(is.na(atrisk_clients_num) | is.na(atrisk_staff_num), 
+                              "Data on number at risk residents and/or staff missing", NA_character_), 
+         rmk_case.cum = if_else(is.na(resident_cases_cum) | is.na(staff_cases_cum) | is.na(hospital_cum) | is.na(deaths_cum), 
+                                "Data on cumulative resident and staff case numbers, hospitalisations and/or deaths missing", NA_character_), 
+         rmk_onset = if_else(is.na(onset_earliest_case) | is.na(onset_most_recent_case), 
+                             "Data on date of onset of earliest and/or most recent case missing", NA_character_), 
+         rmk_vacc_covid = if_else((is.na(number_of_residents_vaccinated_for_covid_19) | is.na(number_of_staff_vaccinated_for_covid_19)) & organism=="Coronavirus",  
+                                  "Data on vaccination % for residents and/or staff missing", NA_character_), 
+         rmk_vacc_flu = if_else((is.na(number_of_residents_vaccinated_for_influenza) | is.na(number_of_staff_vaccinated_for_influenza)) & 
+                                   (organism=="Influenza A" | organism=="Influenza" | organism=="Influenza B"), 
+                                  "Data on vaccination % for residents and/or staff missing", NA_character_), 
+         rmk_vacc_rsv = if_else((is.na(number_of_residents_vaccinated_for_rsv) | is.na(number_of_staff_vaccinated_for_rsv)) & organism=="Respiratory Syncytial virus", 
+                                  "Data on vaccination % for residents and/or staff missing", NA_character_), 
+         rmk_status = if_else(is.na(date_of_last_status_update), "Date of last status update missing", NA_character_), 
+         rmk_rsv = if_else(condition!="Influenza" & organism=="Respiratory Syncytial virus", "Outbreaks caused by RSV should be marked condition = Influenza", NA_character_), 
+         rmk_final = if_else(status_update_type!="Final update" & investigation_status=="Completed", "Completed investigation should be marked Status update = Final update", NA_character_))
+
+
+set_keymiss_ob_table(resp_ob_data_rmk)
+
+```
+
+<br>
+
+### Gastro Outbreaks
+
+**Gastro outbreaks marked Completed or In progress with missing data**
+
+``` {r gastro_outbreaks, ft.align="left"}
+gastro_ob_data_rmk <- gastro_ob_data1mth %>%  
+  #filter(between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
+  mutate(rmk_investigate = if_else(is.na(investigation_status) | investigation_status=="New", 
+                                   "Investigation status is missing or still marked as New", NA_character_)) %>% 
+  filter(investigation_status=="Completed") %>% 
+  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id),
+         rmk_pc = if_else(is.na(postcode), "Postcode is missing", NA_character_), 
+         rmk_lga = if_else(is.na(lga), "LGA is missing", NA_character_), 
+         rmk_txm = if_else(is.na(txm_type), "Transmission type is missing", NA_character_), 
+         rmk_fc = if_else(is.na(facility_class), "Facility classification is missing", NA_character_), 
+         rmk_orgm = if_else(is.na(organism), "Organism is missing", NA_character_), 
+         rmk_name = if_else(is.na(name), "Exposure site name is missing", NA_character_), 
+         rmk_expsite = if_else(is.na(exposure_site), "Exposure site is missing", NA_character_), 
+         rmk_epi_inv = if_else(is.na(epidemiological_investigation_type), "Epidemiological investigation type is missing", NA_character_), 
+         rmk_setting = if_else(is.na(setting_where_exposure_occurred_49), "Setting where exposure occurred is missing", NA_character_), 
+         rmk_racf.id = if_else(is.na(racf_id) & setting=="Aged care", "RACF ID is missing", NA_character_), 
+         rmk_atrisk = if_else(is.na(atrisk_clients_num) | is.na(atrisk_staff_num),
+                              "Data on number at risk clients/residents and/or staff missing", NA_character_),
+         rmk_case_num = if_else(is.na(client_cases_num) | is.na(staff_cases_num) | is.na(total_number_of_cases_cumulative), 
+                                "Data on total client and staff case numbers missing", NA_character_), 
+         rmk_present_dr = if_else(is.na(number_of_cases_presenting_to_a_doctor), 
+                                  "Data on number of cases presenting to doctor missing", NA_character_), 
+         rmk_hosp_death = if_else(is.na(hospital_cum) | is.na(deaths_cum), 
+                                  "Data on number of hospitalisations and/or deaths missing", NA_character_), 
+         rmk_onset = if_else(is.na(onset_date_first) | is.na(onset_date_last), 
+                             "Data on date of onset of first and/or last case missing", NA_character_), 
+         rmk_incubation = if_else(is.na(incubation_period_in_hours_median), 
+                                  "Incubation period missing", NA_character_), 
+         rmk_symptoms = if_else(is.na(number_of_cases_with_diarrhoea) | is.na(number_of_cases_with_vomiting) | is.na(number_of_cases_with_other_major_symptom_s), 
+                                "Data on number of cases with diarrhoea, vomiting and other major symptoms missing", NA_character_), 
+         rmk_sample_faecal = if_else(is.na(were_faecal_samples_obtained), 
+                                     "Were faecal samples obtained not indicated", NA_character_), 
+         rmk_sample_food = if_else(is.na(were_food_samples_obtained), 
+                                   "Were food samples obtained not indicated", NA_character_), 
+         rmk_council = if_else(is.na(assigned_council_lga) | is.na(referred_to_council_lga), 
+                               "Data on assigned or referred to council LGA missing", NA_character_), 
+         rmk_final = if_else(status_update_type!="Final update" & investigation_status=="Completed", "Completed investigation should be marked Status update = Final update", NA_character_)
+         )
+
+
+set_keymiss_ob_table(gastro_ob_data_rmk)
+
+```
+
+

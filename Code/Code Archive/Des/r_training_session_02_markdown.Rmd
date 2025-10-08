@@ -1,0 +1,381 @@
+---
+title: 'NEPHU R Training - Data Wrangling and Creating Tables'
+output: 
+  html_document: 
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{css, echo = FALSE}
+/* */ 
+h1.title {
+  font-weight: bold;
+  font-size: 20px;
+  color: #191d43;
+}
+
+h1 {
+  font-weight: bold;
+  font-size: 20px;
+  color: #191d43;
+}
+
+h2 {
+  font-weight: bold;
+  font-size: 20px;
+  color: #5bc788;
+}
+
+h3 {
+  font-weight: bold;
+  font-size: 16px;
+  color: #5bc788;
+}
+
+body {
+  font-size: 14px;
+}
+```
+
+```{r, echo = FALSE, message = FALSE}
+#
+knitr::opts_chunk$set(echo    = TRUE, 
+                      warning = FALSE, 
+                      message = FALSE)
+
+options(knitr.kable.NA = '--')
+
+here::i_am("Code/r_training_session_02_markdown.Rmd")
+```
+
+<br/>
+
+## Now that I have imported a dataset, what's next?
+
+In Session 1, you have imported a dataset into the R environment and cleaned up the column names using the janitor package.
+
+In this session, you will learn how to further manipulate or wrangle the dataset so that you can shape the raw data into a form that you can use for analysis - this may mean removing columns you don't need, subsetting the data within specific parameters, creating new grouping variables, etc.
+
+One of the beauties of R is that you can create many subsets of your raw data so that you can work on smaller specific sets for specific tasks and analysis.
+
+<br><br>
+
+Let's first load our packages that we want to use.  We will also be using a dataset specially prepared for today's session.  It is a PHESS extract but certain variables and data have been changed to make the dataset messy or untidy so that we can use the tools from today to clean it up.
+
+```{r}
+# load libraries
+library(tidyverse)
+library(janitor)
+```
+
+<br/>
+
+## tidyverse
+
+You were introduced to the tidyverse in Session 1 which is a collection of packages that you can use to wrangle your data nicely and cleanly.  These packages share an underlying philosophy about data structures or 'tidy' data.  In essence, tidy data is where each variable is a column, each observation is a row, and each type of observational unit is a table.  To read up more about tidy data <https://vita.had.co.nz/papers/tidy-data.html>.
+
+Another advantage of the tidyverse packages is that you do not need to quote your column names - you can type them as it is. In most other packages, where you are referring to your data columns, you will need to type them in quotes.
+
+## janitor package
+
+The janitor package contains a lot of functions that you can use to expedite the data cleaning process.  It follows the tidyverse principle and uses the tidyverse packages to build up its functions. <https://cran.r-project.org/web/packages/janitor/vignettes/janitor.html>
+
+Another useful function in the janitor packages is the tabyl() function to explore the data and build tables. We will see this function closely further down.
+
+## dplyr package
+
+The dplyr package contains a set of functions that you can use to manipulate and clean up your dataset.  Think of functions as verbs.
+
+First we load the dataset into R and then apply the clean_names function from the janitor package to clean up/tidy the column names for us as PHESS original column names do not fit the R standard of naming columns - no special characters and spaces, repeated names, etc.
+
+```{r}
+phess_raw <- readxl::read_xlsx(here::here("Data/DataCaseLineList.xlsx")) %>% # load raw data 
+  janitor::clean_names()
+
+```
+
+A quick view of the data and you will notice that there are a lot of missing data denoted as NA in R. Note that this is not a character string "NA" but considered a special symbol in R to indicate missing data.
+
+In some columns, it is also possible that the entire column is all NAs. There is a special function in the janitor package to remove these columns without you having to check out all the columns to see if this is the case.
+
+```{r}
+phess_noNAcol <- remove_empty(phess_raw, "cols")
+
+# Compare the dimensions of the two data frames expressed as (rows, columns)
+dim(phess_raw) # original data frame
+
+dim(phess_noNAcol)
+
+```
+
+Now the dataset is a bit more manageable with only columns that have data in it being retained. Quite often you probable do not need all the columns for your analysis, so it is best practice to subset your data to what you need. We can use the select and filter functions from the dplyr library.
+
+At the same time, you will note that some of the column names are still quite long (based off the PHESS original column names) and so it is useful to shorten it or renames columns that makes more intuitive sense to you. You can use the rename function from the dplyr library.
+
+### rename function
+
+The rename function allows you to rename the column names. The syntax is: new_name = original_name, ...
+
+```{r}
+phess_rename_cols <- phess_noNAcol %>% 
+  rename(subtype = x5_sero_group_subtype, 
+         definition = most_recent_event_classfication, 
+         lga = local_government_area)
+```
+<br>
+
+### select function
+
+The select function subsets the data by selecting the columns of choice or dropping the columns that are not required by adding the -c() function to it.
+
+```{r}
+phess_select_cols <- phess_noNAcol %>% 
+  select(phess_id, event_date, condition, x4organism_cause, epi_classification)
+
+phess_drop_cols <- phess_noNAcol %>% 
+  select(-c(phess_id, event_date))
+```
+<br>
+
+### filter function
+
+The filter function subsets the data by selecting the rows based on a specific condition/requirement.
+
+```{r}
+phess_filter_rows_female <- phess_noNAcol %>% 
+  filter(sex=="Female")
+
+phess_filter_rows_group <- phess_noNAcol %>% 
+  filter(reporting_group %in% c("Vaccine Preventable Diseases", "Enteric Diseases"))
+
+phess_filter_rows_btw_dates <- phess_noNAcol %>% 
+  mutate(event_date = lubridate::ymd(event_date)) %>% 
+  filter(between(event_date, as.Date("2023-08-03"), as.Date("2023-08-06")))
+
+```
+<br>
+
+In the above steps, you have seen how each of the function works. In practice, you can actually combine them all up into a single set of code and assign to one R object.
+
+```{r}
+phess_subset <- phess_noNAcol %>% 
+  rename(organism = x4organism_cause, 
+         subtype = x5_sero_group_subtype, 
+         defn = most_recent_event_classfication, 
+         dob = birth_date, 
+         age = age_in_years_from_event_date, 
+         postcode = postcode_20, 
+         lga = local_government_area) %>% 
+  select(phess_id, event_date, condition, organism, subtype, reporting_group, defn, dob, sex, age, indigenous_status, postcode, lga, case_found_by) %>% 
+  filter(reporting_group %in% c("Vaccine Preventable Diseases", "Enteric Diseases"))
+
+```
+<br>
+
+Let's have a closer look at our subset data.
+
+```{r}
+str(phess_subset)
+```
+<br>
+
+You may now want to refine your data subset a bit further so that it becomes easier to work with later. Some refinement to consider:
+
+1.  changing date variables into Date type/class. Currently you will notice that it is POSIXct class which is a date-time format. When you use readxl to read in excel files, it guesses which variables are date or date/time variables and puts them into R as date-time variables. Even though there is no time data attached in this original raw data, when it gets read in, it will still put it in date-time format. In this case, you will see that it is written behind the hood as 2023-08-01 00:00:00. This can make it difficult to use because you will always have to quote it as date-time whenever you want to work with it.
+
+2.  changing some of the variables into factors (eg: sex, lga). Factors are how R deals with categorical variables, allowing you to analyse them as strata. When converting into factors, you will need to specify the levels of the categorical variable. The default is levels are set up alphabetically (using the baseR factor function), or in the order as it appears in the data (using the forcats as_factor function), or unless otherwise specified.
+
+3.  creating new variables for example:
+
+a.  regrouping the age variable into age-groups
+b.  reclassify age into more descriptive categories
+c.  reclassify residential lga into inner-melbourne and outer-melbourne
+
+4.  address some of the missing data issue
+
+```{=html}
+<!-- -->
+```
+a.  sometimes data is recorded as a number for missing (eg: 999 in age)
+b.  rather than denoting as NA, you may want to replace it with some other notation
+
+You can do all these by using the mutate function which adds new variables or modify the data in existing variables.
+
+### mutate function
+
+In the next step, we will be using the mutate function to transform existing variable or create new variables, as well as other sub-functions that you can use to modify the data.
+
+In addition, we will use the lubridate package to work with dates. This is a great package allowing you work with date time variables. R has a specific format for dates written as YYYY-MM-DD.
+
+We will also be using the forcats package to convert variables into factors.
+
+```{r}
+library(lubridate)
+# no need to load the forcats library since this is already loaded as part of tidyverse at the beginning
+
+phess_data <- phess_subset %>% 
+  mutate(event_date = ymd(event_date), # convert to date only
+         dob = ymd(event_date), 
+         sex = factor(sex, levels=c("Male", "Female")), # convert to factor with levels M, F
+         lga = factor(lga),  # convert to factor with lga levels alphabetically
+         age_grp = cut(age, breaks=seq(0, 101, by=10), include.lowest=TRUE), # create age group var
+         age_cat = case_when(between(age, 0, 18) ~ "Cat1", # create age categories var
+                               between(age, 19, 35) ~ "Cat2", 
+                               between(age, 36, 60) ~ "Cat3", 
+                               between(age, 61, 90) ~ "Cat4", 
+                               TRUE ~ NA_character_), 
+         city = if_else(lga %in% c("Yarra (C)", "Darebin (C)"), "Inner-Melbourne", "Outer-Melbourne"), 
+         age = na_if(age, 999), 
+         case_found_by = replace_na(case_found_by, "Not recorded"))
+
+```
+<br>
+
+Let's see what this new data looks like now:
+
+``` {r}
+str(phess_data)
+
+```
+<br>
+
+## Creating tables
+
+In general, there are two parts to creating tables. First, you need to decide what you want to present in the table - it can be a simple summary / frequency table of your data, a cross-tabulation table or even simply a table showing some lines of your data itself. You will then need to create this and store it as an R object, preferable as a dataframe.
+
+The second part is using one of the many table packages out there to render your table that you created as a dataframe into a printed version of your table where you can define how it will look/appear in print.
+
+### Simple summary tables
+
+There are plenty of options here. Within the dplyr package, there is the summarise function.
+
+A simple summary table is usually showing the frequency, proportions and summary statistics of your key variables in your data. 
+
+It can also be a simple table of counts and percentages for each of the conditions in the dataset.
+
+Below is a table showing key summary statistics of each condition using the dplyr summarise function
+
+```{r}
+tab_cond_summarise <- phess_data %>% 
+  group_by(condition) %>% 
+  summarise(count = n(), mean_age = mean(age, na.rm=T), males_count = sum(sex=="Male", na.rm=T), first_notification = first(event_date))
+
+tab_cond_summarise
+```
+<br>
+
+When you use summarise(), you can supply a number of baseR functions to create the summary values.
+Refer to the dplyr documentation <https://dplyr.tidyverse.org/reference/summarise.html> for more details and functions that you can use within summarise.
+
+The argument, na.rm=T means that if there are missing values (NA), they will be removed before calculation. Otherwise, if there are missing values, the calculation will not compute and you will get NA as a result.
+
+If you want to count a specific level of a categorical variable, you can use the sum() function on a condition, which basically counts the number of rows that meet the logical criteria (ie: evaluates to TRUE).
+
+If you need to do further calculations, you can add on more steps in the code
+
+```{r}
+tab_cond_summarise <- phess_data %>% 
+  group_by(condition) %>% 
+  summarise(count = n(), mean_age = mean(age, na.rm=T), males_count = sum(sex=="Male", na.rm=T), first_notification = first(event_date)) %>% 
+  mutate(pct = round(count / sum(count) * 100, 1)) %>% 
+  relocate(pct, .after = count)
+
+tab_cond_summarise
+```
+<br>
+
+Some packages provide readymade functions to give quick frequency summary such as the janitor package - tabyl function.
+
+The example below shows how to construct a quick and simple count and percentages table for each condition in your dataset.
+
+```{r}
+tab_cond_tabyl <- tabyl(phess_data, condition)
+
+tab_cond_tabyl
+```
+<br>
+
+### Cross tables
+Cross tables or 2-way tables are frequency tables for two variables - one represented in the rows and the other represented in the columns.  We can use the same tabyl function from the janitor package, specifying the variable you want to put in the row first and then column.  You will note that only count frequencies here and you can include additional steps of code to calculate percentages.
+
+```{r}
+crosstab_condition_sex <- tabyl(phess_data, condition, sex)
+
+crosstab_condition_sex
+```
+<br>
+
+### Presenting tables
+Now that you have analysed your data and put it into a table, you want to be able to present this table nicely for readers. 
+
+As mentioned, there are plenty of packages available in R to achieve this.  Each will have their own specific features that may be more appropriate for what you need. So you may want to explore some of them to see which package will suit you best.  These tables can then be exported as an image file (.png .jpg) or .html and even as office word tables
+
+In this session, we will look at the flextable package.  The main function is flextable() and you pass the dataframe which contains the table that you created to flextable for display and formatting.
+
+To present the summary table:
+```{r}
+library(flextable)
+
+summary_table <- flextable(tab_cond_summarise)
+summary_table
+```
+<br>
+
+You can further modify the table to suit the presentation, such as changing the table header names. Currently it uses the variable names that you use in the dataframe and this may not be reader-friendly during presentation.
+
+``` {r} 
+summary_table %>% set_header_labels(condition = "Condition", 
+                                    count = "Cases", 
+                                    pct = "%", 
+                                    mean_age = "Mean age", 
+                                    males_count = "Males total", 
+                                    first_notification = "First notified date") %>% 
+  autofit()
+```
+<br>
+
+
+```{r}
+library(kableExtra)
+# 
+kbl(tab_cond_summarise, "html") %>% kable_styling()
+
+```
+
+## A more complicated data wrangling process - joining tables
+
+We now want to join two tables together and use data across these two tables to calculate some new variables. 
+
+When joining two tables, you need to first determine the key - this is the variable that is common in both tables and you want to ensure that there is a 1:1 relationship - ie. each row in first table correspond to only one row in the second table. If there is no corresponding row in the second table, then the data will come back as NA.
+
+In the example below, we will join a summary table of influenza by LGA with with a population data table and calculate rate of influenza by LGA level.  The key here is LGA.
+
+
+```{r}
+flu_by_lga <- phess_data %>% 
+  filter(condition=="Influenza") %>% 
+  group_by(lga) %>% 
+  summarise(count = n(), mean_age = round(mean(age, na.rm=T), 0), males_count = sum(sex=="Male", na.rm=T)) %>% 
+  mutate(male_pct = round(males_count / count * 100, 1))
+
+# Load in population data
+pop_data <- readxl::read_xlsx(here::here("Data/LGAPopulationData.xlsx")) 
+
+# join population data to flu by lga table
+flurate_by_lga <- left_join(flu_by_lga, pop_data, by=c("lga" = "LGA")) %>% 
+  mutate(mth_rate = round(count / Pop_2021 *100000, 1)) %>% 
+  arrange(desc(mth_rate)) %>% 
+  select(lga, mean_age, male_pct, mth_rate)
+
+flextable(flurate_by_lga) %>% 
+  set_header_labels(lga = "LGA", 
+                    mean_age = "Mean age (yrs)", 
+                    male_pct = "% males", 
+                    mth_rate = "Monthly rate"
+) %>% 
+  add_footer_lines("Monthly rate per 100,000 population") %>% 
+  autofit()
+
+```
+

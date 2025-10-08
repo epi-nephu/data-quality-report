@@ -1,0 +1,38 @@
+# SRHVH - Health services mapping
+
+library(tidyverse)
+library(sf)
+
+# load basemap file
+lga_file <- "/Data/LGA_2022_AUST_GDA2020_SHP/LGA_2022_AUST_GDA2020.shp"  # basemap folder found in the surveillance reporting folder, subfolder Data
+
+# LGA data basemaps
+aus_lga <- st_read(here::here(lga_file)) # CRS=GDA2020 (EPSG: 7843)
+
+nephu_lgas <- c("Banyule", "Boroondara", "Darebin", "Hume", "Knox", "Manningham", "Maroondah", "Nillumbik", "Whitehorse", "Whittlesea", "Yarra", "Yarra Ranges")
+
+vic_lga <- filter(aus_lga, STE_NAME21=="Victoria") %>% 
+  select(-c(STE_CODE21, AUS_CODE21, AUS_NAME21, LOCI_URI21)) %>% 
+  rename(lga_code=LGA_CODE22, lga_name=LGA_NAME22, ste_name=STE_NAME21, areasqkm=AREASQKM, shp_length=SHAPE_Leng, 
+         shp_area=SHAPE_Area) %>% 
+  mutate(lphu = if_else(lga_name %in% nephu_lgas, "NEPHU", NA_character_))
+
+nephu_lga <- filter(vic_lga, lphu=="NEPHU")
+
+# load clinic location file
+clinics_file <- "SRH_clinics.xlsx"  # replace file with full clinic list with long + lat coordinates
+
+# clinic mapping
+clinics.geo <- readxl::read_xlsx(file.path(folder, clinics_file), sheet="coords") %>% 
+  janitor::clean_names() %>% 
+  mutate(lat = as.numeric(str_remove(str_extract(long_lat, "^-[:graph:]*"), ",")), 
+         long = as.numeric(str_remove(str_extract(long_lat, "\\s[:graph:]*"), "\\s"))) %>% 
+  st_as_sf(., coords=c("long", "lat"), crs=4326) %>% 
+  st_transform(., crs=7843)
+
+
+ggplot() + 
+  geom_sf(data=nephu_lga, col="Black", fill=NA) + 
+  geom_sf(data=clinics.geo, aes(col=type)) + 
+  # geom_sf_text(data=clinics.geo, aes(label=clinics), size=2) + 
+  theme_void()

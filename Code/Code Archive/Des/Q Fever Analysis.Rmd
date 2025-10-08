@@ -1,0 +1,95 @@
+---
+title: "NEPHU - Q Fever Analysis"
+author: ""
+date: "Report date: `r format(Sys.Date(), '%d %b %Y')`"
+output: html_document
+params:
+  epiweek_enddate: "10 June 2023"
+knit: (function(input, ...) {
+  rmarkdown::render(input, output_file = paste0("RRV Special Report", "-", format(Sys.Date(), "%d %b %Y")), output_dir = "../output") })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width=9, fig.height=6)
+here::i_am("Code/Q Fever Analysis.Rmd")
+library(tidyverse)
+library(lubridate)
+library(ggpubr)
+library(flextable)
+library(officer)
+library(janitor)
+```
+
+qfever_file: extracted from PHESS for period 1/1/2022 to 29/11/2023
+
+```{r define files}
+base_dir <- "C:/Users/GULZDZ/OneDrive - Austin Health/"
+qfever_file <- "QFever_20220101_20231129.xlsx"
+
+
+
+wd <- getwd()
+main_dir <- str_remove(wd, "CD Surveillance Reporting Rmarkdown/Code")
+phess_dir_component <- "PHESS Reporting/PHESS Reports for Power BI/"
+phess_data_dir <- paste0(main_dir, phess_dir_component)
+
+population_file <- "Data/LGAPopulationData.xlsx"
+rrv_file <- "Data/VIC_RRV_20230614223828.xlsx"
+```
+
+
+```{r}
+qfever.raw <- readxl::read_xlsx(paste0(base_dir, qfever_file)) %>% 
+  janitor::remove_empty("cols") %>% 
+  janitor::clean_names()
+
+qfever.clean <- qfever.raw %>% 
+  rename(organism = organism_cause, 
+         clin_pres = case_found_by, 
+         defn = most_recent_event_classfication, 
+         dob = birth_date, 
+         age = age_in_years_from_event_date, 
+         atsi = indigenous_status, 
+         death_status = death_due_to_the_notifiable_condition_answer_disease, 
+         suburb = suburb_town, 
+         postcode = postcode_22, 
+         lga = local_government_area, 
+         lphu = local_public_health_unit, 
+         cty_birth = country_of_birth, 
+         sympt_onset = date_of_first_symptom_onset, 
+         wsc_status = work_study_care_status, 
+         occ = occupation, 
+         cty_travel = specify_country_46, 
+         exp_site = exposure_site, 
+         exp_cat = category, 
+         exp_city = city, 
+         exp_name = name, 
+         exp_postcode = postcode_58, 
+         exp_add1 = street_address_1, 
+         exp_add2 = street_address_2,
+         vacc_status = vaccination_status_for_answer_disease, 
+         vacc_source = source_of_information, 
+         esf_collect = enhanced_surveillance_data_collected, 
+         contact_with = in_the_period_of_interest_did_the_case_have_contact_with_any_of_the_following, 
+         contact_with_illness = has_the_case_had_contact_with_a_person_with_a_similar_illness, 
+         employ_screen = q_fever_detected_on_employment_screening, 
+         exp_risk_factors = in_the_period_of_interest_did_the_case_visit_work_at_participate_in_any_of_the_following_risk_factors, 
+         high_risk_occ = high_risk_occupation, 
+         high_risk_occ_oth = specify_173, 
+         occ_acquired = is_this_an_occupationally_acquired_infection) %>% 
+  select(-c(reporting_group, event_type, epi_classification, where, follow_up_indicated_by_epi, follow_up_completed, follow_up_required_by, reason_for_follow_up, date_changed, this_doctor_has_provided_consent_to_contact_the_case_directly, date_consent_provided, investigation_status, country, other_organisation_source_reference, exposure_period_end_date_plus_22_days, geocode_status, event_classification)) %>% 
+  filter(defn=="Confirmed")
+
+```
+
+
+```{r}
+tabyl(qfever.raw$most_recent_event_classfication)
+tabyl(qfever.raw$high_risk_occupation)
+tabyl(qfever.raw, most_recent_event_classfication, high_risk_occupation)
+
+qfever.clean %>% filter(high_risk_occ =="Pet food manufacturer") %>% select(event_date, defn, lga, lphu, exp_name, risk_factors)
+
+with(qfever.raw[qfever.raw$high_risk_occupation=="Pet food manufacturer"], print(most_recent_event_classfication))
+```
+

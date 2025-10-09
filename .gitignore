@@ -5,3 +5,6 @@
 Test/
 Output/
 Documentation/
+Data/
+.xlsx
+.Rproj

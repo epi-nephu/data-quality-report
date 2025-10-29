@@ -28,6 +28,9 @@ and therefore will just be a futile check.  Can only apply if done an interview 
 Version 4:
 include export of Excel file containing only variables needed to transfer to the HP Log sheet - this entails recoding the functions used to create and output the tables
 
+- tidied up AMR (cases up to 4 months for checking core data fields, added logic condition to filter out data checks on os related acquisition only on cases who reported travelling overseas in last 4yrs)
+- split Other Conditions into AMR and Other (Legionella)
+
 -->
 
 
@@ -288,10 +291,10 @@ cond_data_mth2 <- filter(condition.clean, between(event_date, as.Date(start_date
   filter(event_type=="Case")
 
 cond_data_mth4 <- filter(condition.clean, event_date <= as.Date(start_date4mth)) %>% 
-  filter(event_type=="Case")
+  filter(event_type=="Case") # incl cases where event data is before the 4mth cutoff
 
 cond_data_mth7 <- filter(condition.clean, event_date <= as.Date(start_date7mth)) %>% 
-  filter(event_type=="Case")
+  filter(event_type=="Case") # incl cases where event data is before the 7mth cutoff (for MU condition)
 
 # outbreak data cut
 ob_data1mth <- filter(outbreak.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
@@ -1182,16 +1185,76 @@ output_inprogress_table("Zoonotic", zoo_inprogress_table)
 <br><br>
 
 
-### Other Conditions
+### Other Conditions - AMR
 
 **Cases marked completed with key data missing**
 
 ``` {r OTH key table, ft.align="left"}
-oth_key_missing_rmk <- key_missing_rmk %>% 
-  distinct(phess_id, .keep_all = TRUE) %>% 
+# Other conditions excl AMR
+oth_keymiss_data <- condition.clean %>% 
+  # select data up to 4 months
+  filter(event_date >= as.Date(start_date4mth)) %>% 
   filter(disease_type=="Other Conditions") %>% 
+  filter(investigation_status=="Completed" ) %>% 
+  filter(death_status=="Alive") %>% 
+  filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  distinct(phess_id, .keep_all = TRUE) %>% 
+  filter(event_type=="Case")
+
+oth_key_missing_rmk <- oth_keymiss_data %>% 
   mutate(
-    # AMR
+    # core data fields
+    rmk_suburb = if_else(is.na(suburb), "Suburb is missing", NA_character_), 
+    rmk_pc = if_else(is.na(postcode), "Postcode is missing", NA_character_), 
+    rmk_lga = if_else(is.na(lga), "LGA is missing", NA_character_), 
+    rmk_cob = if_else(!condition %in% cob_excl & is.na(cty_birth), "Country of birth is missing", NA_character_), 
+    # rmk_cob_ns = if_else(!condition %in% cob_excl & cty_birth=="Not Stated", 
+    #                   "Please review country of birth data to see if more details have been provided", NA_character_), 
+    rmk_atsi = if_else(atsi=="Missing/Not Stated" & is.na(atsi_attempted), "Indigenous status marked Missing/Not Stated, please review if more details have been provided", NA_character_), 
+    rmk_sex = if_else(is.na(sex), "Sex is missing", NA_character_), 
+    rmk_dob = if_else(is.na(dob), "DOB is missing", NA_character_), 
+    rmk_death = if_else(is.na(death_status), "Death due to notifiable condition is missing", NA_character_), 
+    rmk_wsc = if_else(is.na(work_study_care_status), "Work/Study/Care status is missing", NA_character_), 
+    rmk_cond = if_else(is.na(condition), "Condition is missing", NA_character_), 
+    rmk_found = if_else(is.na(clin_pres), "Case found by is missing", NA_character_), 
+    rmk_epiclass = if_else(is.na(epi_class), "Epi classification is missing", NA_character_), 
+    rmk_organism = if_else(is.na(organism), "Organism/cause is missing", NA_character_), 
+    rmk_case = if_else(event_type=="Contact/exposed person", "Case is left as Contact/exposed person", NA_character_), 
+    rmk_eventdate = if_else(is.na(event_date), "Event date is missing", NA_character_), 
+    #rmk_gp = if_else(is.na(local_family_treating_doctor), "GP detail is missing", NA_character_), 
+    # rmk_vac_source = if_else(vaccinated=="Yes" & is.na(vaccinated_source_of_info), 
+    #                          "Vaccine source of information missing", NA_character_), 
+    rmk_suspected = if_else(defn=="Suspected" & investigation_status=="Completed", 
+                            "Case is still Suspected", NA_character_), 
+    rmk_recent_travel_cty = if_else(recent_travel_overseas=="Yes" & is.na(cty_recent_travel), 
+                            "Country field is blank for overseas travel recently", NA_character_), 
+    rmk_notifier_urgent = if_else(condition %in% urgent_cond & is.na(notifier), 
+                           "Notifier is missing", NA_character_), 
+    # rmk_eform = if_else(condition %in% urgent_cond & is.na(eform), "Eform received is missing", NA_character_), 
+    # risk factors
+    primary_exp_count = if_else(disease_type != "Sexually Transmissible Infections" | 
+                                  !condition %in% primary_risk_noncount, 
+                                str_count(primary_exposure, "Primary"), NA_integer_), 
+    rmk_risk = case_when(!condition %in% risk_factor_excl & is.na(risk_factors) 
+                         ~ "Data on risk factors is missing", 
+                         !condition %in% risk_factor_excl & primary_exp_count>1 
+                         ~ "More than 1 primary risk factor provided", 
+                         primary_exp_count==0 & !condition %in% c(primary_risk_noncount, "Hepatitis D") 
+                         ~ "No primary risk factor provided"), 
+    rmk_cty_travel = if_else(risk_factors=="Travel overseas" & is.na(risk_factor_os_cty), 
+                             "Country missing for Travel overseas risk", NA_character_), 
+    # hyperlink phess_id
+    url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id))
+
+
+# AMR
+amr_key_missing_rmk <- oth_key_missing_rmk %>%  
+  filter(condition %in% amr_cond) %>% 
+  # filter out cases lost to follow-up
+  filter(esf_requested!="Lost to follow-up") %>% 
+  mutate(
+    rmk_esf = if_else(condition %in% amr_cond & esf_requested!="Lost to follow-up" & is.na(esf_collected), 
+                      "Outstanding ESF", NA_character_), 
     rmk_eventtype = if_else(condition %in% amr_cond & event_type != "Case", 
                             "Event type is not classified as case", NA_character_), 
     rmk_travel_contact = if_else(condition %in% amr_cond & 
@@ -1209,37 +1272,42 @@ oth_key_missing_rmk <- key_missing_rmk %>%
                           is.na(cpeb_travel_os_in_past_4y_country), 
                              "Country visited in past 4 years not specified", NA_character_), 
     rmk_cty_reason = if_else(condition %in% amr_cond & 
+                               cpeb_travel_os_in_past_4y=="Yes" & 
                                (!is.na(cpeb_travel_os_in_past_4y_country) | !cpeb_travel_os_in_past_4y_country %in% c("Unknown", "Not Stated")) & is.na(cpeb_travel_os_in_past_4y_reason), 
                              "Reason for travel missing", NA_character_), 
-    rmk_cty_reason_oth = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y_reason=="Other" & 
+    rmk_cty_reason_oth = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y=="Yes" & cpeb_travel_os_in_past_4y_reason=="Other" & 
                                    is.na(cpeb_travel_os_in_past_4y_reason_other_specify), 
                                  "Reason for travel other specify missing", NA_character_), 
     rmk_med_intended = if_else(condition %in% amr_cond & 
+                                 cpeb_travel_os_in_past_4y=="Yes" & 
                                (!is.na(cpeb_travel_os_in_past_4y_country) | !cpeb_travel_os_in_past_4y_country %in% c("Unknown", "Not Stated")) & is.na(cpeb_travel_os_in_past_4y_medical_treatment_intended), 
                                "Case travel with intention of receiving medical or health care missing", NA_character_), 
-    rmk_med_intended_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y_medical_treatment_intended=="Yes" & 
+    rmk_med_intended_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y=="Yes" & 
+                                      cpeb_travel_os_in_past_4y_medical_treatment_intended=="Yes" & 
                                       is.na(cpeb_travel_os_in_past_4y_medical_treatment_intended_type), 
                                     "Type of treatment sought missing", NA_character_), 
     rmk_hcfacility = if_else(condition %in% amr_cond & 
                                cpeb_travel_os_in_past_4y=="Yes" & 
                           is.na(cpeb_travel_os_in_past_4y_illness_visit_health_care), 
                              "Visit to healthcare facility in country not indicated", NA_character_), 
-    rmk_facility_oth = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_other=="Yes" & 
+    rmk_facility_oth = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y=="Yes" & cpeb_travel_os_in_past_other=="Yes" & 
                                  is.na(cpeb_travel_os_in_past_other_specify), 
                                "Healthcare facility other missing", NA_character_), 
     rmk_healthcare = if_else(condition %in% amr_cond & 
                                cpeb_travel_os_in_past_4y=="Yes" & 
                                is.na(cpeb_travel_os_in_past_4y_medical_treatment),
                              "Medical treatment or procedure in country not indicated", NA_character_), 
-    rmk_healthcare_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y_medical_treatment=="Yes" & 
+    rmk_healthcare_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y=="Yes" & 
+                                    cpeb_travel_os_in_past_4y_medical_treatment=="Yes" & 
                                     is.na(cpeb_travel_os_in_past_4y_medical_treatment_type), 
                                   "Specify type of treatment received missing", NA_character_),
-    rmk_exp_illness = if_else(condition %in% amr_cond & 
-                                (!is.na(cpeb_travel_os_in_past_4y_country) | !cpeb_travel_os_in_past_4y_country %in% c("Unknown", "Not Stated")) & is.na(cpeb_travel_os_in_past_4y_illness), 
-                              "Case experience any illness missing", NA_character_), 
-    rmk_exp_illness_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y_illness=="Yes" & 
-                                     is.na(cpeb_travel_os_in_past_4y_illness_type), 
-                                   "Type of illness missing", NA_character_), 
+    # this field (cpeb_travel_os_in_past_4y_illness) doesn't seem to exist anymore
+    # rmk_exp_illness = if_else(condition %in% amr_cond &
+    #                             (!is.na(cpeb_travel_os_in_past_4y_country) | !cpeb_travel_os_in_past_4y_country %in% c("Unknown", "Not Stated")) & is.na(cpeb_travel_os_in_past_4y_illness),
+    #                           "Case experience any illness missing", NA_character_), 
+    # rmk_exp_illness_type = if_else(condition %in% amr_cond & cpeb_travel_os_in_past_4y_illness=="Yes" & 
+    #                                  is.na(cpeb_travel_os_in_past_4y_illness_type), 
+    #                                "Type of illness missing", NA_character_), 
     rmk_spec_collect = if_else(condition %in% amr_cond & is.na(cpeb_reason_for_testing), 
                                "Reason for specimen collection missing", NA_character_), 
     rmk_isolation = if_else(condition %in% amr_cond & is.na(cpeb_isolation_represents), 
@@ -1301,10 +1369,11 @@ oth_key_missing_rmk <- key_missing_rmk %>%
                                             cpeb_contact_returned_traveller_contact_admitted_to_hcf=="Yes" & 
                                             is.na(cpeb_contact_returned_traveller_contact_admitted_to_hcf_country), 
                                           "Contact admitted to health care facility overseas specify country missing", NA_character_)
-    ) 
+    ) %>% 
+  arrange(desc(event_date))
 
-oth_keymiss_table <- set_keymiss_table((oth_key_missing_rmk))
-output_keymiss_table(oth_keymiss_table)
+amr_keymiss_table <- set_keymiss_table((amr_key_missing_rmk))
+output_keymiss_table(amr_keymiss_table)
 
 ```
 <br>
@@ -1602,7 +1671,7 @@ writexl::write_xlsx(list(Completed = full_aggregate_completed_table,
 ```
 
 
-```{r output_xl}
+```{r output_excel}
 tab_order <- c("Resp Outbreaks", "FBWB Outbreaks", "BBV", "STI", "Enteric", "Vector-borne", "Zoonotic", 
                "AMR", "Other", "Vaccine Preventable")
 

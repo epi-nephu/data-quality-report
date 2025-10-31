@@ -1679,7 +1679,7 @@ excel_table <- bind_rows(outbreak_new, legion_open, resp_ob_keymiss_table, gastr
                          bbv_keymiss_table, bbv_inprogress_table, ent_keymiss_table, ent_inprogress_table, crypto_risk_table, 
                          sti_keymiss_table, sti_inprogress_table, mpox_keymiss_table, 
                          vpd_keymiss_table, vpd_inprogress_table, vbd_keymiss_table, vbd_inprogress_table, 
-                         oth_keymiss_table, oth_inprogress_table) %>% 
+                         amr_keymiss_table, oth_inprogress_table) %>% 
   select(disease_type, phess_id, condition, remarks, date_identified, event_name) %>% 
   mutate(tab = case_when(disease_type=="Vaccine Preventable Diseases" & !is.na(event_name) ~ "Resp Outbreaks", 
                          disease_type=="Enteric Diseases" & !is.na(event_name) ~ "FBWB Outbreaks", 

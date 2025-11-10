@@ -142,6 +142,8 @@ enteric_conditions <- c("Campylobacter infection", "Cryptosporidiosis", "Hepatit
                         "Shiga-toxin and Vero-toxin producing Escherichia coli", 
                         "Haemolytic Uraemic Syndrome", "Vibrio parahaemolyticus infection")
 
+enteric_vacc <- c("Typhoid", "Hepatitis A")
+
 vbd_cond <- c("Ross River virus infection", "Barmah Forest virus infection", "Dengue virus infection", 
               "Chikungunya virus infection", "Zika virus infection")
 
@@ -656,6 +658,8 @@ ent_key_missing_nonshig <- key_missing_rmk %>%
                             "Hospital admission date missing", NA_character_), 
     rmk_dischargedate = if_else(hospital_presented_to %in% c("Hospital admission", "Hospital emergency") & is.na(hospital_discharged_date), 
                             "Hospital discharged date missing", NA_character_), 
+    rmk_vacc_typ = if_else(condition %in% enteric_vacc & is.na(vaccinated), 
+                           "Vaccinated field is missing", NA_character_)
   )
 
 

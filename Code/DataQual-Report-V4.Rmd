@@ -30,6 +30,8 @@ include export of Excel file containing only variables needed to transfer to the
 
 - tidied up AMR (cases up to 4 months for checking core data fields, added logic condition to filter out data checks on os related acquisition only on cases who reported travelling overseas in last 4yrs)
 - split Other Conditions into AMR and Other (Legionella)
+- filter DQ check on STI/BBV for ESF_collected = "Yes". HIV and Mpox - incl all. 
+- amended syphilis symptom onset date check only for symptoms=Yes
 
 -->
 
@@ -532,11 +534,10 @@ output_inprogress_table <- function(group, df) {
 ``` {r BBV key table, ft.align="left"}
 bbv_key_missing_rmk <- key_missing_rmk %>% 
   distinct(phess_id, .keep_all = TRUE) %>% 
-  #filter(esf_received=="Yes") %>% 
-  #filter(investigation_status=="Completed" ) %>% 
-  filter(disease_type=="Blood Borne Viruses" | condition %in% hiv_cond) %>% 
-  #filter(death_status=="Alive") %>% 
-  #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
+  filter(disease_type=="Blood Borne Viruses") %>% 
+  filter(esf_collected=="Yes") %>% 
+  # combine data for HIV (all cases)
+  bind_rows(., key_missing_rmk %>% distinct(phess_id, .keep_all=TRUE) %>% filter(condition %in% hiv_cond)) %>% 
   mutate(
     rmk_testreas = if_else((condition %in% hep_cond | condition %in% hiv_cond) & is.na(test_reason), 
                            "Reason for testing is missing", NA_character_), 
@@ -747,11 +748,10 @@ output_inprogress_table("Enteric Diseases", ent_inprogress_table)
 ``` {r STI key table, ft.align="left"}
 sti_key_missing_rmk <- key_missing_rmk %>% 
   distinct(phess_id, .keep_all = TRUE) %>% 
-  #filter(esf_received=="Yes") %>% 
-  #filter(investigation_status=="Completed" ) %>% 
   filter(disease_type=="Sexually Transmissible Infections") %>% 
   filter(!condition %in% hiv_cond) %>% 
   filter(condition!="Mpox") %>% 
+  filter(esf_collected=="Yes") %>% 
   #filter(death_status=="Alive") %>% 
   #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
   mutate(
@@ -761,7 +761,7 @@ sti_key_missing_rmk <- key_missing_rmk %>%
                           "Symptoms field not indicated", NA_character_), 
     rmk_pregnant = if_else((condition=="Gonococcal infection" | condition %in% syph_cond) & sex=="Female" & is.na(pregnant), 
                            "Currently pregnant field not indicated", NA_character_), 
-    rmk_symptonset = if_else(condition%in%syph_cond & is.na(sympt_onset), 
+    rmk_symptonset = if_else(condition%in%syph_cond & symptoms=="Yes" & is.na(sympt_onset), 
                             "Symptom onset date is missing", NA_character_), 
     rmk_antenatal = if_else(condition %in% syph_cond & pregnant=="Yes" & is.na(antenatal), 
                             "Antenatal care pregnancy stage is missing", NA_character_), 

@@ -32,6 +32,7 @@ include export of Excel file containing only variables needed to transfer to the
 - split Other Conditions into AMR and Other (Legionella)
 - filter DQ check on STI/BBV for ESF_collected = "Yes". HIV and Mpox - incl all. 
 - amended syphilis symptom onset date check only for symptoms=Yes
+- exclude 6 months follow-up treatment outcome data check for MU, see email from DH 27/11/2025 (note: have not exclude in-progress check yet, kept in to monitor for any not closed off.)
 
 -->
 
@@ -1072,8 +1073,8 @@ vbd_key_missing_rmk <- key_missing_rmk %>%
                         "Symptom onset date missing", NA_character_), 
     rmk_cal_onset = if_else(condition=="Mycobacterium ulcerans" & is.na(cal_onset_date), 
                         "Calculated onset date missing", NA_character_), 
-    rmk_tmt_form = if_else(condition=="Mycobacterium ulcerans" & is.na(treatment_outcomes_requested), 
-                           "Treatment outcomes from requested missing", NA_character_), 
+    # rmk_tmt_form = if_else(condition=="Mycobacterium ulcerans" & is.na(treatment_outcomes_requested), 
+    #                        "Treatment outcomes form requested missing", NA_character_), 
     rmk_summary_risk = if_else(condition %in%risk_factor_excl & is.na(risk_factors_summary), 
                                "Data on summary risk factor is missing", NA_character_), 
     # rmk_esf_collect = if_else(condition=="Mycobacterium ulcerans" & is.na(esf_received), 

@@ -33,6 +33,7 @@ include export of Excel file containing only variables needed to transfer to the
 - filter DQ check on STI/BBV for ESF_collected = "Yes". HIV and Mpox - incl all. 
 - amended syphilis symptom onset date check only for symptoms=Yes
 - exclude 6 months follow-up treatment outcome data check for MU, see email from DH 27/11/2025 (note: have not exclude in-progress check yet, kept in to monitor for any not closed off.)
+- removed aggregate tables section
 
 -->
 
@@ -63,39 +64,10 @@ phess_data_dir <- paste0(main_dir, phess_dir_component)
 
 ```
 
-```{r backup}
-# back up the aggregate table before starting process on new data 
-# (just in case we need to revert back to the previous aggregate table if something goes wrong in the current process)
-
-pullin_aggregate <- function(tab) {
-  data = readxl::read_xlsx(here("Output", "Aggregate Table", "aggregate_table_FY2025_2026.xlsx"), 
-                           sheet=tab) %>% 
-  mutate(event_date = as.Date(event_date), 
-         data_check_date = as.Date(data_check_date))
-  return(data)
-}
-
-
-
-pullin_aggregate_completed_table <- pullin_aggregate("Completed")
-pullin_aggregate_inprogress_table <- pullin_aggregate("InProgress")
-pullin_aggregate_outbreak_table <- pullin_aggregate("Outbreak")
-
-
-# push out tables to backup file
-writexl::write_xlsx(list(Completed = pullin_aggregate_completed_table, 
-                         InProgress = pullin_aggregate_inprogress_table, 
-                         Outbreak = pullin_aggregate_outbreak_table), 
-                    here("Output", "Aggregate Table",  "backup_aggregate_table_FY2025_2026.xlsx"))
-
-```
-
 ```{r load data}
 allothers.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_allothers_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
 exceptions.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_exceptions_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
-
-# all.raw <- readxl::read_xlsx(file.path(phess_data_dir, condition_all_file), sheet=1, guess_max=min(500000, Inf)) %>% janitor::clean_names() 
 
 condition.raw <- bind_rows(allothers.raw, exceptions.raw)
 
@@ -112,7 +84,6 @@ most_recent_date <- if(max(condition.raw$event_date) == Sys.Date()) {
 start_date1mth <- most_recent_date - days(30)
 start_date2mth <- most_recent_date - days(60)
 start_date4mth <- most_recent_date - days(120)
-start_date7mth <- most_recent_date - days(210)
 
 ```
 
@@ -298,8 +269,6 @@ cond_data_mth2 <- filter(condition.clean, between(event_date, as.Date(start_date
 cond_data_mth4 <- filter(condition.clean, event_date <= as.Date(start_date4mth)) %>% 
   filter(event_type=="Case") # incl cases where event data is before the 4mth cutoff
 
-cond_data_mth7 <- filter(condition.clean, event_date <= as.Date(start_date7mth)) %>% 
-  filter(event_type=="Case") # incl cases where event data is before the 7mth cutoff (for MU condition)
 
 # outbreak data cut
 ob_data1mth <- filter(outbreak.clean, between(event_date, as.Date(start_date1mth), as.Date(most_recent_date))) %>% 
@@ -669,7 +638,7 @@ shigella_key_missing <- key_missing_rmk %>%
   filter(condition=="Shigellosis") %>% 
   arrange(phess_id, tests_results_for_this_specimen_type) %>% 
   group_by(phess_id) %>% 
-  # remove duplicate rows by selecting the top 1 row in each group (after arranged, "Culture" would be at top if present)
+  # remove duplicate rows by selecting the top 1 row in each group
   slice_head(n = 1) %>% 
   mutate(
     rmk_exp_site = if_else(! risk_factors %in%  c("Travel overseas", "Travel within Australia") & is.na(exp_site), 
@@ -753,8 +722,6 @@ sti_key_missing_rmk <- key_missing_rmk %>%
   filter(!condition %in% hiv_cond) %>% 
   filter(condition!="Mpox") %>% 
   filter(esf_collected=="Yes") %>% 
-  #filter(death_status=="Alive") %>% 
-  #filter(defn %in% c("Confirmed", "Probable", "Suspected")) %>% 
   mutate(
     rmk_gender = if_else(condition != "Chlamydia trachomatis infection" & is.na(idty_gender), 
                          "Identified gender is missing", NA_character_), 
@@ -1113,12 +1080,12 @@ output_keymiss_table(vbd_keymiss_table)
 ```
 <br>
 
-**Cases still marked as in progress after 1 month, after 3 months for RRV and BFV and after 6 months for MU**
+**Cases still marked as in progress after 1 month, after 3 months for RRV and BFV**
 
 ``` {r VBD inprogress table, ft.align="left"}
 vbd_inprogress_2m <- in_progress_mth2 %>% 
   filter(disease_type=="Vector Borne Diseases") %>% 
-  filter(! condition %in% c("Ross River virus infection", "Barmah Forest virus infection", "Mycobacterium ulcerans")) %>% 
+  filter(! condition %in% c("Ross River virus infection", "Barmah Forest virus infection")) %>% 
   arrange(condition, event_date) %>% 
   distinct(phess_id, .keep_all=TRUE) %>% 
   mutate(date_identified = Sys.Date(), 
@@ -1132,22 +1099,22 @@ vbd_inprogress_4m <- in_progress_mth4 %>%
   mutate(date_identified = Sys.Date(), 
          remarks = "Cases still marked 'In progress' after 3 months")
 
-vbd_inprogress_mu <- cond_data_mth7 %>% 
-  filter(investigation_status == "In progress") %>% 
-  filter(condition =="Mycobacterium ulcerans") %>% 
-  mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
-  select(phess_id, url, condition, event_date, defn, investigation_status, disease_type, event_type) %>% 
-  arrange(condition, event_date) %>% 
-  distinct(phess_id, .keep_all=TRUE) %>% 
-  mutate(date_identified = Sys.Date(), 
-         remarks = "Cases still marked 'In progress' after 6 months")
+# vbd_inprogress_mu <- cond_data_mth7 %>% 
+#   filter(investigation_status == "In progress") %>% 
+#   filter(condition =="Mycobacterium ulcerans") %>% 
+#   mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
+#   select(phess_id, url, condition, event_date, defn, investigation_status, disease_type, event_type) %>% 
+#   arrange(condition, event_date) %>% 
+#   distinct(phess_id, .keep_all=TRUE) %>% 
+#   mutate(date_identified = Sys.Date(), 
+#          remarks = "Cases still marked 'In progress' after 6 months")
 
 
-vbd_inprogress_table <- bind_rows(vbd_inprogress_2m, vbd_inprogress_4m, vbd_inprogress_mu)
+vbd_inprogress_table <- bind_rows(vbd_inprogress_2m, vbd_inprogress_4m)
 
   
 if(nrow(vbd_inprogress_table)==0) {
-  cat("Data quality check complete - no cases marked as in progress after 1 month or 3 months for RRV and BFV or 6 months for MU")
+  cat("Data quality check complete - no cases marked as in progress after 1 month or 3 months for RRV and BFV")
   } else if(nrow(vbd_inprogress_table)>0) {
     flextable(vbd_inprogress_table, col_keys=c("phess_id", "condition", "remarks", "date_identified",  "event_date", "defn", "investigation_status")) %>% 
       compose(j="phess_id", value=as_paragraph(hyperlink_text(x=phess_id, url=url))) %>% 
@@ -1583,95 +1550,6 @@ gastro_ob_data_rmk <- bind_rows(gastro_ob_new, gastro_ob_complete, gastro_ob_inp
 
 gastro_ob_keymiss_table <- set_keymiss_ob_table(gastro_ob_data_rmk)
 output_keymiss_ob_table(gastro_ob_keymiss_table)
-
-```
-
-
-```{r aggregation table}
-extract_var_agg <- function(df) {
-  data = df %>% select(phess_id, condition, event_date)
-  return(data)
-}
-
-
-aggregate_data <- function(...) {
-  # create list of all input dataframes
-  data_frames = list(...)
-  
-  # check if any dataframes were provided
-  if(length(data_frames) == 0) {
-    stop("No data frames provided.")
-  }
-  
-  # apply function to each dataframe
-  results = lapply(data_frames, FUN=extract_var_agg)
-  
-  results_combined = bind_rows(results)
-  return(results_combined)
-}
-
-clean_aggregate_data <- function(df) {
-  data = df %>% 
-    distinct(phess_id, .keep_all=TRUE) %>% 
-    mutate(data_check_date = as.Date(Sys.Date()), 
-           # remove time and timezone details from date variables
-           event_date = as.Date(event_date), 
-           # add quarter of year column
-           quarter = paste0(year(data_check_date), "-Q", 
-                            quarter(data_check_date)))
-  return(data)
-}
-
-# Table for cases marked as 'Completed' ----
-aggregate_completed_table <- aggregate_data(
-  bbv_key_missing_rmk, mpox_key_missing_rmk, sti_key_missing_rmk, 
-  ent_key_missing_rmk, vpd_key_missing_rmk, vbd_key_missing_rmk, 
-  zoo_key_missing_rmk, oth_key_missing_rmk) %>% 
-  clean_aggregate_data()
-
-writexl::write_xlsx(aggregate_completed_table, here("Test", "test_aggregate.xlsx"))
-# 
-#   distinct(phess_id, .keep_all=TRUE) %>% 
-#   mutate(data_check_date = as.Date(most_recent_date) + day(1), 
-#          quarter = paste0(year(data_check_date), "-Q", quarter(data_check_date)))
-
-# agg_tab_colname <- paste0("date_", most_recent_date)
-# names(aggregate_table)[match("count", names(aggregate_table))] <- agg_tab_colname
-
-# read in previous aggregate table to append current data to
-prev_aggregate_completed_table <- readxl::read_xlsx(here("Output", "Aggregate Table",  "aggregate_table_FY2025_2026.xlsx"), sheet="Completed")
-
-full_aggregate_completed_table <- prev_aggregate_completed_table %>%
-  bind_rows(aggregate_completed_table)
-
-# Table for cases marked as 'In progress' ----
-aggregate_inprogress_table <- aggregate_data(
-  in_progress_mth2, in_progress_mth4) %>% 
-  clean_aggregate_data()
-
-# read in previous aggregate table to append current data to
-prev_aggregate_inprogress_table <- readxl::read_xlsx(here("Output", "Aggregate Table",  "aggregate_table_FY2025_2026.xlsx"), sheet="InProgress")
-
-full_aggregate_inprogress_table <- prev_aggregate_inprogress_table %>%
-  bind_rows(aggregate_inprogress_table)
-
-# Table for cases marked as 'In progress' ----
-aggregate_outbreak_table <- aggregate_data(
-  resp_ob_data_rmk, gastro_ob_data_rmk) %>% 
-  clean_aggregate_data()
-
-# read in previous aggregate table to append current data to
-prev_aggregate_outbreak_table <- readxl::read_xlsx(here("Output", "Aggregate Table",  "aggregate_table_FY2025_2026.xlsx"), sheet="Outbreak")
-
-full_aggregate_outbreak_table <- prev_aggregate_outbreak_table %>%
-  bind_rows(aggregate_outbreak_table)
-
-# write all full_aggregated_ tables to Excel
-writexl::write_xlsx(list(Completed = full_aggregate_completed_table, 
-                         InProgress = full_aggregate_inprogress_table, 
-                         Outbreak = full_aggregate_outbreak_table), 
-                    here("Output", "Aggregate Table",  "aggregate_table_FY2025_2026.xlsx"))
-
 
 ```
 

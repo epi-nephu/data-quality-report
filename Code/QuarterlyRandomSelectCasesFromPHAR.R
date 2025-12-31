@@ -6,7 +6,7 @@
 # Define parameters:
 # Select month by entering the first 3 letters of the month in small letters within quotation marks. Eg: "mar", "sep", "dec", etc.
 # if you require all months, then enter "all"
-select_qtr <- "Q3-2025"
+select_qtr <- "Q4-2025"
 
 # select the max number of cases you want to randomly select.
 max_cases <- 5
@@ -17,37 +17,63 @@ max_cases <- 5
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+# Version Control Notes:
+# - include code to determine start and end dates for use in dbGetQuery function to extract data from PHESS
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 # load libraries
 library(here)
 library(tidyverse)
 library(lubridate)
 library(janitor)
 
+# determine start and end dates for data extract
+year <- str_extract(select_qtr, "20\\d\\d")
+quarter <- str_extract(select_qtr, "Q\\d")
+if(quarter=="Q1") {
+  start_date = paste0(year, "-01-01")
+  end_date = paste0(year, "-03-31")
+}
+if(quarter=="Q2") {
+  start_date = paste0(year, "-04-01")
+  end_date = paste0(year, "-06-30")
+}
+if(quarter=="Q3") {
+  start_date = paste0(year, "-07-01")
+  end_date = paste0(year, "-09-30")
+}
+if(quarter=="Q4") {
+  start_date = paste0(year, "-10-01")
+  end_date = paste0(year, "-12-31")
+}
+start_date <- ymd(start_date)
+end_date <- ymd(end_date)
 
 # set up connection to PHAR
 con <- DBI::dbConnect(odbc::odbc(), "PHAR")
 
 
 # extract data from PHAR
-case_raw <- DBI::dbGetQuery(con, 
+case_raw <- DBI::dbGetQuery(con, str_glue(
                            "
                            SELECT * 
                            FROM dh_public_health.phess_release.caseevents 
                            WHERE ASSIGNED_LPHU = 'North Eastern' 
-                           AND EVENT_DATE BETWEEN '2025-07-01' AND '2025-09-30' 
+                           AND EVENT_DATE BETWEEN '{start_date}' AND '{end_date}' 
                            ORDER BY EVENT_DATE DESC; 
-                           "
+                           ")
 ) %>% 
   clean_names()
 
-ob_raw <- DBI::dbGetQuery(con, 
+ob_raw <- DBI::dbGetQuery(con, str_glue(
                           "
                            SELECT * 
                            FROM dh_public_health.phess_release.outbreakevents
                            WHERE ASSIGNED_LPHU = 'North Eastern' 
-                           AND EVENT_DATE BETWEEN '2025-07-01' AND '2025-09-30' 
+                           AND EVENT_DATE BETWEEN '{start_date}' AND '{end_date}' 
                            ORDER BY EVENT_DATE DESC; 
-                           "
+                           ")
 ) %>% 
   clean_names()
 
@@ -219,8 +245,8 @@ random5_table <- left_join(base_table, random5, by="Disease") %>%
 #     filter(Disease %in% !!sym(select_mth)) 
 # }
 
-request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD", "Measles", "Mpox", 
-                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Res OB", "Ent OB")
+request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD", "Measles", "Mpox", "Shigellosis", "Cryptosporidiosis", 
+                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Legionellosis", "Psittacosis", "Res OB", "Ent OB")
 
 request_df <- random5_table %>% 
   filter(Disease %in% request_selection)

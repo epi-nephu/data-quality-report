@@ -1,4 +1,4 @@
-# Script for aggregating cases identified with data issue and summarising the counts
+# Script for aggregating cases identified with data issue and summarising the counts - Needs to be reviewed (not used currently)
 
 # INSTRUCTIONS (HOW TO USE THIS R SCRIPT)
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

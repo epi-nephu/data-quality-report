@@ -34,6 +34,7 @@ include export of Excel file containing only variables needed to transfer to the
 - amended syphilis symptom onset date check only for symptoms=Yes
 - exclude 6 months follow-up treatment outcome data check for MU, see email from DH 27/11/2025 (note: have not exclude in-progress check yet, kept in to monitor for any not closed off.)
 - removed aggregate tables section
+- rabies and lyssavirus to remain as in progress - no need to check for Complete (ref: Renae email Epi inbox 9/1/2026)
 
 -->
 
@@ -377,7 +378,7 @@ new <- condition.clean %>%
 
 in_progress_mth2 <- cond_data_mth2 %>% 
   filter(investigation_status == "In progress") %>% 
-  #filter(condition!="Mycobacterium ulcerans") %>% 
+  filter(!condition %in% c("Rabies", "Lyssavirus - Australian Bat Lyssavirus")) %>% 
   mutate(url = paste0('https://phess.dhhs.vic.gov.au/main.do?CaseID=', phess_id)) %>% 
   select(phess_id, url, disease_type, condition, event_date, defn, investigation_status, event_type) %>% 
   arrange(disease_type, condition) 

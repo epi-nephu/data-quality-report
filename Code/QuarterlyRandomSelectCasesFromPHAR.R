@@ -51,7 +51,7 @@ start_date <- ymd(start_date)
 end_date <- ymd(end_date)
 
 # set up connection to PHAR
-con <- DBI::dbConnect(odbc::odbc(), "PHAR")
+con <- DBI::dbConnect(odbc::odbc(), "PHAR", useProxy=0)
 
 
 # extract data from PHAR
@@ -246,7 +246,8 @@ random5_table <- left_join(base_table, random5, by="Disease") %>%
 # }
 
 request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD", "Measles", "Mpox", "Shigellosis", "Cryptosporidiosis", 
-                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Legionellosis", "Psittacosis", "Res OB", "Ent OB")
+                       "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Legionellosis", "Psittacosis", "CPOs", "Candida auris", 
+                       "Res OB", "Ent OB")
 
 request_df <- random5_table %>% 
   filter(Disease %in% request_selection)

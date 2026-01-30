@@ -655,7 +655,7 @@ shigella_key_missing <- key_missing_rmk %>%
     rmk_icu = if_else(hospital_presented_to %in% c("Hospital admission", "Hospital emergency") & is.na(icu), 
                       "Admitted to ICU missing", NA_character_), 
     rmk_tmt = if_else(is.na(treated), "Treated for this illness missing", NA_character_), 
-    rmk_antib = if_else(treated=="Yes" & is.na(treated_antibiotic), "Treated for antibiotics missing", NA_character_), 
+    rmk_antib = if_else(treated=="Yes" & is.na(treated_antibiotic), "Antibiotic treated with missing", NA_character_), 
     rmk_symp = if_else(is.na(symptoms), 
                        "Did persons have symptoms is missing", NA_character_), 
     rmk_symp_onset = if_else(is.na(sympt_onset) & symptoms=="Yes", 

@@ -35,6 +35,7 @@ include export of Excel file containing only variables needed to transfer to the
 - exclude 6 months follow-up treatment outcome data check for MU, see email from DH 27/11/2025 (note: have not exclude in-progress check yet, kept in to monitor for any not closed off.)
 - removed aggregate tables section
 - rabies and lyssavirus to remain as in progress - no need to check for Complete (ref: Renae email Epi inbox 9/1/2026)
+- incl incident classification check for ROB (ref: Hibaq email and DH email Epi inbox 13/4/2026)
 
 -->
 
@@ -1450,6 +1451,7 @@ resp_ob_data_rmk <- resp_ob_data1mth %>%
          rmk_lga = if_else(is.na(lga), "LGA is missing", NA_character_), 
          rmk_txm = if_else(is.na(txm_type), "Transmission type is missing", NA_character_), 
          rmk_fc = if_else(is.na(facility_class), "Facility classification is missing", NA_character_), 
+         rmk_incident = if_else(incident_classification == "Not yet classified", "Assign a category classification for this incident", NA_character_), 
          rmk_orgm = if_else(is.na(organism), "Organism is missing", NA_character_), 
          rmk_name = if_else(is.na(exposure_site_name), "Exposure site name is missing", NA_character_), 
          rmk_expsite = if_else(is.na(exposure_site), "Exposure site is missing", NA_character_), 

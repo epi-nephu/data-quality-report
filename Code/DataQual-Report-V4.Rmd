@@ -36,6 +36,7 @@ include export of Excel file containing only variables needed to transfer to the
 - removed aggregate tables section
 - rabies and lyssavirus to remain as in progress - no need to check for Complete (ref: Renae email Epi inbox 9/1/2026)
 - incl incident classification check for ROB (ref: Hibaq email and DH email Epi inbox 13/4/2026)
+- check for risk factor for past 2 years only for HepC newly acquired cases (ref: Amina email Epi inbox 22/6/2026)
 
 -->
 
@@ -532,7 +533,7 @@ bbv_key_missing_rmk <- key_missing_rmk %>%
     rmk_notifier = if_else(condition %in% hep_cond & is.na(notifier), 
                            "Notifier is missing", NA_character_), 
     # at least one of the following risk factor in past 2 years must be ticked
-    rmk_risk2yr = if_else(condition %in% hep_cond & 
+    rmk_risk2yr = if_else(condition %in% c("Hepatitis B - Newly acquired", "Hepatitis C - Newly acquired") & 
                             is.na(sexual_partner_of_opposite_sex) & 
                             is.na(sexual_partner_of_same_sex) & 
                             is.na(hiv_positive_msm) & 

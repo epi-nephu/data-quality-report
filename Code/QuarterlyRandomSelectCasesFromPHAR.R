@@ -6,10 +6,10 @@
 # Define parameters:
 # Select month by entering the first 3 letters of the month in small letters within quotation marks. Eg: "mar", "sep", "dec", etc.
 # if you require all months, then enter "all"
-select_qtr <- "Q4-2025"
+select_qtr <- "Q2-2026"
 
 # select the max number of cases you want to randomly select.
-max_cases <- 5
+max_cases <- 15
 
 # Now highlight the entire page and click "Run" to execute the entire code
 
@@ -108,7 +108,6 @@ inclu_defn <- c("Confirmed", "Probable", "At risk")
 resp_ob <- c("Influenza", "Influenza A", "Influenza B", "Respiratory Syncytial virus", "Coronavirus")
 
 
-
 # Disease selection for each month
 jan <- c("STEC", "Salmonellosis", "Cryptosporidiosis", "Hepatitis A", "RSV", "Other Rare Urgent", 
          "Hepatitis C", "Hepatitis D", "Chlamydia", "Mpox", "Pertussis", "Measles", "Diptheria", 
@@ -130,7 +129,7 @@ may <- c("STEC", "Salmonellosis", "Cryptosporidiosis", "Hepatitis A", "RSV", "Ot
          "Hepatitis D", "Gonococcal infection", "Mpox", "Pertussis", "Tetanus", "iGAS", "Mycobacterium ulcerans", 
          "Q fever", "Rabies", "CJD")
 
-jun <- c("Shigellosis", "Rotafivurs infection", "Salmonellosis", "Cryptosporidiosis", "Listeriosis", "Typhoid", 
+jun <- c("Shigellosis", "Rotavirus infection", "Salmonellosis", "Cryptosporidiosis", "Listeriosis", "Typhoid", 
          "Hepatitis B", "Hepatitis C", "HIV", "Mpox", "IMD", "iGAS", "HIB", "JEV", "Psittacosis", 
          "Legionellosis", "CPOs")
 
@@ -229,13 +228,13 @@ combined <- condition.subset %>%
             )
 
 
-# Random select 5 cases on each disease
-random5 <- combined %>% 
+# Random select max_cases on each disease
+random_select <- condition.subset %>% 
   group_by(Disease) %>% 
-  slice_sample(n=5)
+  slice_sample(n=max_cases)
 
 # Merge into base table (for layout)
-random5_table <- left_join(base_table, random5, by="Disease") %>% 
+random_select_table <- left_join(base_table, random_select, by="Disease") %>% 
   mutate(phess_id = if_else(is.na(phess_id), "No cases recently", phess_id))
 
 # if(select_mth=="all") {
@@ -245,11 +244,18 @@ random5_table <- left_join(base_table, random5, by="Disease") %>%
 #     filter(Disease %in% !!sym(select_mth)) 
 # }
 
+bbv_sti <- c("Hepatitis B", "Hepatitis C", "HIV", "Syphilis", "Chlamydia", "Mpox", "Gonococcal infection")
+
+amr <- c("CPOs", "VRE")
+
 request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD", "Measles", "Mpox", "Shigellosis", "Cryptosporidiosis", 
                        "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Legionellosis", "Psittacosis", "CPOs", "Candida auris", 
                        "Res OB", "Ent OB")
 
-request_df <- random5_table %>% 
+request_selection <- c("Salmonellosis", "Shigellosis", "Campylobacter infection", "STEC", "Dengue", "Leptospirosis", 
+                       bbv_sti, amr, "iGAS", "IPD")
+
+request_df <- random_select_table %>% 
   filter(Disease %in% request_selection)
 
 

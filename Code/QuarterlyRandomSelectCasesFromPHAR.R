@@ -25,7 +25,6 @@ max_cases <- 15
 # load libraries
 library(here)
 library(tidyverse)
-library(lubridate)
 library(janitor)
 
 # determine start and end dates for data extract
@@ -77,6 +76,11 @@ ob_raw <- DBI::dbGetQuery(con, str_glue(
 ) %>% 
   clean_names()
 
+# Load extract data when DBI connection to PHAR is not working
+case_raw <- readxl::read_xlsx(here("Data", "Extract_Q2_2026.xlsx")) |> 
+  clean_names() |> 
+  mutate(investigation_completed_date = if_else(investigation_completed_date=="null", NA_Date_, 
+                                                janitor::excel_numeric_to_date(as.numeric(investigation_completed_date))))
 
 # Load base table
 base_table <- readxl::read_xlsx(here("Data", "Monthly Review Base Table.xlsx"))
@@ -252,8 +256,9 @@ request_selection <- c("iGAS", "Pertussis", "Hepatitis B", "Hepatitis C", "IPD",
                        "Typhoid", "STEC", "Dengue", "Mycobacterium ulcerans", "Legionellosis", "Psittacosis", "CPOs", "Candida auris", 
                        "Res OB", "Ent OB")
 
-request_selection <- c("Salmonellosis", "Shigellosis", "Campylobacter infection", "STEC", "Dengue", "Leptospirosis", 
-                       bbv_sti, amr, "iGAS", "IPD")
+request_selection <- c("Salmonellosis", "Shigellosis", "Campylobacter infection", "STEC", "Cryptospoiridiosis", "Hepatitis A", "Hepatitis E", 
+                       "Paratyphoid", "Typhoid", "Dengue", "Leptospirosis", 
+                       bbv_sti, amr, "iGAS", "IPD", "Measles", "Pertussis")
 
 request_df <- random_select_table %>% 
   filter(Disease %in% request_selection)

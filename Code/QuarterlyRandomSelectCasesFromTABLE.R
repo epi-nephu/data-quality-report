@@ -68,12 +68,6 @@ entry_table <- readxl::read_xlsx(here("Data", "Records Entry Table.xlsx"), sheet
 nephu_lgas <- c("Banyule (C)", "Boroondara (C)", "Darebin (C)", "Hume (C)", "Knox (C)", "Manningham (C)", "Maroondah (C)", "Nillumbik (S)", 
                 "Whitehorse (C)", "Whittlesea (C)", "Yarra (C)", "Yarra Ranges (S)")
 
-urgent_cond <- c("Anthrax", "Botulism", "Candida auris", "Cholera", "COVID-19", "Diphtheria", "Food-borne or water-borne illness", 
-                 "Haemolytic Uraemic Syndrome", "Haemophilus influenzae Type B (HiB)", "Hepatitis A", "Meningococcal infection", 
-                 "Japanese encephalitis", "Legionellosis", "Listeriosis", "Lyssavirus - Australian Bat Lyssavirus", "Measles", 
-                 "Middle East Respiratory Syndrome (MERS)", "Mpox", "Murray Valley Encephalitis Virus", "Paratyphoid", "Plague", 
-                 "Poliomyelitis", "Rabies", "Severe Acute Respiratory Syndrome (SARS)", "Smallpox", "Tularaemia", "Typhoid", 
-                 "Viral haemorrhagic fevers", "Yellow Fever")
 
 cpo <- c("Carbapenemase producing acinetobacter", "Carbapenemase producing enterobacterales", "Carbapenemase producing pseudomonas")
 hepb <- c("Hepatitis B - Newly acquired", "Hepatitis B - Unspecified")
@@ -81,11 +75,7 @@ hepc <- c("Hepatitis C - Newly acquired", "Hepatitis C - Unspecified", "Hepatiti
 hiv <- c("Human Immunodeficiency Virus Infection - Newly acquired", "Human Immunodeficiency Virus infection - Unspecified", "Human Immunodeficiency Virus Infection - Individual aged 18 months or older")
 syph <- c("Syphilis - Congenital", "Syphilis - Infectious", "Syphilis - Late", "Syphilis - Not further specified")
 vzv <- c("Varicella zoster infection (Chickenpox)", "Varicella zoster infection (Shingles)", "Varicella zoster infection (Unspecified)")
-rare_urgents <- c("Middle East Respiratory Syndrome (MERS)", "Zika virus", "Barmah Forest virus infection", 
-                  "Ross River virus infection", "Flavivirus", "Avian influenza", "Plague", "Tularaemia", 
-                  "Viral haemorrhagic fevers")
-other_rare_urgents <- c("Botulism", "Cholera", "Haemolytic Uraemic Syndrome", "Leprosy", 
-                        "Severe Acute Respiratory Syndrome (SARS)", "Smallpox")
+
 inclu_defn <- c("Confirmed", "Probable", "At risk")
 resp_ob <- c("Influenza", "Influenza A", "Influenza B", "Respiratory Syncytial virus", "Coronavirus")
 
